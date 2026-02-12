@@ -37,6 +37,7 @@ body {
   user-select: none;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  touch-action: manipulation;
 }
 
 #app {
@@ -207,6 +208,9 @@ body {
   flex-direction: column;
   align-items: center;
   gap: clamp(2px, 0.5vmin, 4px);
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
 }
 
 .peer-icon:hover {
@@ -242,7 +246,9 @@ body {
 }
 
 .peer-icon.my-mouth .peer-label {
-  margin-top: -100px;
+  position: relative;
+  z-index: 1;
+  margin-top: clamp(-60px, -10vmin, -100px);
 }
 
 .peer-icon.my-mouth .peer-svg {
@@ -270,6 +276,8 @@ body {
   pointer-events: none;
   letter-spacing: 0;
   white-space: nowrap;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .peer-label[data-peer-id] {
