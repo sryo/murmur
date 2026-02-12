@@ -2,7 +2,6 @@
 import state, { subscribe } from './state.js';
 import { setTalking, getAnalyser, getRemoteAnalyser } from './audio.js';
 import { leaveRoom, createRoom, sendTalkingState, startWhisper, stopWhisper, sendRename } from './peer.js';
-import { interpolate } from 'https://esm.run/flubber';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -87,35 +86,76 @@ const EAR_HEIGHT = 131;
 const MOUTH_WIDTH = 129;
 const MOUTH_HEIGHT = 56;
 
-// --- For morphing we need the fill paths ---
-const EAR_FILL = `M7.04338 46.5155C7.42547 52.0346 11.8638 59.5402 11.8638 76.7589C11.8638 93.9777 9.5169 98.3883 11.8638 109.872C13.3977 117.377 16.4653 124 26.1068 124C35.7483 124 38.3777 121.793 42.7601 115.391C47.1426 108.989 72.9994 73.4471 72.9994 48.9438C72.9994 24.4405 66.864 7.22182 37.5015 7.00106C8.13899 6.78031 6.6613 40.9964 7.04338 46.5155Z`;
-const MOUTH_FILL = `M8.53442 28.5556C8.53442 28.5556 35.8209 7 41.8985 7C47.976 7 54.9797 16.4138 59.6018 15.4444C64.224 14.4751 67.8961 7 72.312 7C76.7279 7 109.534 28.5556 109.534 28.5556C109.534 28.5556 86.3118 49 79.1209 49H37.1322C29.4153 49 8.53442 28.5556 8.53442 28.5556Z`;
-
-// Pre-calculate interpolators for morphing
-let earToMouthInterpolator = null;
-let mouthToEarInterpolator = null;
-
-try {
-  earToMouthInterpolator = interpolate(EAR_FILL, MOUTH_FILL, { maxSegmentLength: 5 });
-  mouthToEarInterpolator = interpolate(MOUTH_FILL, EAR_FILL, { maxSegmentLength: 5 });
-} catch (e) {
-  console.warn('Flubber interpolation setup failed:', e);
-}
-
-// --- Peer position slots (percentage-based for 393x852 viewBox) ---
-const PEER_SLOTS_PCT = [
-  { xPct: 39.95, yPct: 15.96 },  // was { x: 157, y: 136 }
-  { xPct: 30.53, yPct: 28.40 },  // was { x: 120, y: 242 }
-  { xPct: 76.34, yPct: 19.95 },  // was { x: 300, y: 170 }
-  { xPct: 30.53, yPct: 45.77 },  // was { x: 120, y: 390 }
-  { xPct: 64.12, yPct: 43.43 },  // was { x: 252, y: 370 }
-  { xPct: 69.97, yPct: 57.04 },  // was { x: 275, y: 486 }
-  { xPct: 30.53, yPct: 58.69 },  // was { x: 120, y: 500 }
-  { xPct: 50.13, yPct: 32.86 },  // was { x: 197, y: 280 }
-];
+// Bounding area for peer placement (within the head)
+const PEER_BOUNDS = { xMin: 22, xMax: 78, yMin: 15, yMax: 55 };
 
 // The mouth position for the user's PTT (percentage-based)
-const MY_MOUTH_PCT = { xPct: 50.13, yPct: 70.89 };  // was { x: 197, y: 604 }
+const MY_MOUTH_PCT = { xPct: 50, yPct: 72 };
+
+// Seeded random for deterministic positions
+function seededRandom(seed) {
+  const x = Math.sin(seed * 9999) * 10000;
+  return x - Math.floor(x);
+}
+
+function calculatePeerPositions(count, peerIds = []) {
+  if (count === 0) return [];
+
+  const { xMin, xMax, yMin, yMax } = PEER_BOUNDS;
+
+  // Sort for consistent order across clients
+  const sortedIds = [...peerIds].sort();
+
+  // Initial positions from peer ID hash
+  let positions = sortedIds.map(id => {
+    const seed = hashCode(id);
+    return {
+      xPct: xMin + (xMax - xMin) * seededRandom(seed),
+      yPct: yMin + (yMax - yMin) * seededRandom(seed + 1)
+    };
+  });
+
+  // Repel overlapping peers and avoid PTT mouth
+  for (let iter = 0; iter < 15; iter++) {
+    for (let i = 0; i < positions.length; i++) {
+      // Repel from other peers
+      for (let j = i + 1; j < positions.length; j++) {
+        const dx = positions[j].xPct - positions[i].xPct;
+        const dy = positions[j].yPct - positions[i].yPct;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+
+        if (dist < 20) {
+          const push = (20 - dist) / 2;
+          const nx = dx / dist, ny = dy / dist;
+          positions[i].xPct -= nx * push;
+          positions[i].yPct -= ny * push;
+          positions[j].xPct += nx * push;
+          positions[j].yPct += ny * push;
+        }
+      }
+
+      // Repel from PTT mouth (fixed position)
+      const dx = positions[i].xPct - MY_MOUTH_PCT.xPct;
+      const dy = positions[i].yPct - MY_MOUTH_PCT.yPct;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+
+      if (dist < 40) {
+        const push = (40 - dist);
+        positions[i].xPct += (dx / dist) * push;
+        positions[i].yPct += (dy / dist) * push;
+      }
+    }
+
+    // Clamp to bounds
+    positions = positions.map(p => ({
+      xPct: Math.max(xMin, Math.min(xMax, p.xPct)),
+      yPct: Math.max(yMin, Math.min(yMax, p.yPct))
+    }));
+  }
+
+  // Return in original order
+  return peerIds.map(id => positions[sortedIds.indexOf(id)]);
+}
 
 // --- Audio-reactive mouth animation ---
 // Track animations per peer ID
@@ -186,8 +226,14 @@ function updateMouthWithAudio(peerId) {
   const upperFill = document.querySelector(`.mouth-upper[data-peer-id="${peerId}"]`);
   const lowerFill = document.querySelector(`.mouth-lower[data-peer-id="${peerId}"]`);
 
-  if (upperFill) upperFill.setAttribute('d', upperPath);
-  if (lowerFill) lowerFill.setAttribute('d', lowerPath);
+  if (upperFill) {
+    upperFill.getBBox();
+    upperFill.setAttribute('d', upperPath);
+  }
+  if (lowerFill) {
+    lowerFill.getBBox();
+    lowerFill.setAttribute('d', lowerPath);
+  }
 
   animState.animationId = requestAnimationFrame(() => updateMouthWithAudio(peerId));
 }
@@ -281,18 +327,17 @@ function renderFigureSVG() {
 }
 
 function renderPeerIcons() {
-  // Separate my peer from others
   const myPeer = state.peers.find(p => p.peerId === state.myPeerId);
   const otherPeers = state.peers.filter(p => p.peerId !== state.myPeerId);
+  const peerIds = otherPeers.map(p => p.peerId);
+  const positions = calculatePeerPositions(otherPeers.length, peerIds);
 
   let html = '';
 
-  // Render other peers (ears/mouths)
   otherPeers.forEach((peer, i) => {
-    html += renderPeerIconHTML(peer, PEER_SLOTS_PCT[i % PEER_SLOTS_PCT.length], i);
+    html += renderPeerIconHTML(peer, positions[i], i);
   });
 
-  // Render my mouth (PTT area)
   if (myPeer) {
     html += renderMyMouthHTML(myPeer);
   }
@@ -418,62 +463,6 @@ function esc(s) {
 function updatePeerPositions() {
   // No special positioning needed - peer-layer uses inset: 0 to match container
   // This function is kept for potential future use
-}
-
-// --- Morph animation ---
-
-const morphAnimations = new Map();
-
-function animateMorph(peerId, toTalking) {
-  const existing = morphAnimations.get(peerId);
-  if (existing) {
-    cancelAnimationFrame(existing);
-    morphAnimations.delete(peerId);
-  }
-
-  const peerIcon = document.querySelector(`.peer-icon[data-peer-id="${peerId}"]`);
-  if (!peerIcon) return;
-
-  // Find fill path in the SVG
-  const fillPath = peerIcon.querySelector('path[fill^="var(--fill"]');
-  if (!fillPath) return;
-
-  const interpolator = toTalking ? earToMouthInterpolator : mouthToEarInterpolator;
-  if (!interpolator) {
-    updatePeerIcon(peerId);
-    return;
-  }
-
-  const duration = 300;
-  const start = performance.now();
-
-  function tick(now) {
-    const elapsed = now - start;
-    const t = Math.min(elapsed / duration, 1);
-    const eased = easeOutCubic(t);
-
-    try {
-      const pathData = interpolator(eased);
-      fillPath.setAttribute('d', pathData);
-    } catch (e) {
-      updatePeerIcon(peerId);
-      return;
-    }
-
-    if (t < 1) {
-      const frame = requestAnimationFrame(tick);
-      morphAnimations.set(peerId, frame);
-    } else {
-      morphAnimations.delete(peerId);
-      updatePeerIcon(peerId);
-    }
-  }
-
-  requestAnimationFrame(tick);
-}
-
-function easeOutCubic(t) {
-  return 1 - Math.pow(1 - t, 3);
 }
 
 function updatePeerIcon(peerId) {
@@ -604,13 +593,6 @@ function bindPeerIcons() {
 
     if (peerId === state.myPeerId) {
       bindPTT(icon);
-
-      const label = icon.querySelector('.peer-label');
-      if (label) {
-        const trigger = (e) => { e.preventDefault(); e.stopPropagation(); startNameEdit(); };
-        label.addEventListener('pointerdown', trigger);
-        label.style.cursor = 'pointer';
-      }
       continue;
     }
 
@@ -786,6 +768,11 @@ function bind() {
   bindRoomControls();
 }
 
+// --- prevent iOS zoom gestures ---
+document.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('gesturechange', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('gestureend', (e) => e.preventDefault(), { passive: false });
+
 // --- global keyboard ---
 document.addEventListener('keydown', (e) => {
   if (e.code !== 'Space' || e.repeat || state.view !== 'room') return;
@@ -812,9 +799,6 @@ document.addEventListener('keyup', (e) => {
   }
 });
 
-// --- Track previous talking states for morph animation ---
-const prevTalkingStates = new Map();
-
 // --- subscriptions ---
 
 const fullRenderProps = new Set(['view', 'roomCode', 'error', 'offline']);
@@ -831,41 +815,18 @@ subscribe((prop) => {
 
     const key = peersKey();
     if (key !== lastPeersKey) {
-      // Track which peers changed talking state
-      const peersToStartAnim = [];
-      const peersToStopAnim = [];
-
-      for (const peer of state.peers) {
-        const wasTalking = prevTalkingStates.get(peer.peerId) || false;
-        const isTalking = !!peer.isTalking;
-
-        if (wasTalking !== isTalking && peer.peerId !== state.myPeerId) {
-          setTimeout(() => animateMorph(peer.peerId, isTalking), 0);
-          // Queue animation start/stop for after DOM render
-          if (isTalking) {
-            peersToStartAnim.push(peer.peerId);
-          } else {
-            peersToStopAnim.push(peer.peerId);
-          }
-        }
-        prevTalkingStates.set(peer.peerId, isTalking);
-      }
-
-      // Stop animations before re-render
-      for (const peerId of peersToStopAnim) {
-        stopMouthAnimation(peerId);
-      }
-
       // Re-render peer icons
       peerLayer.innerHTML = renderPeerIcons();
       bindPeerIcons();
       lastPeersKey = key;
 
-      // Update positions and start animations after DOM is ready
+      // Start mouth animations for talking peers
       requestAnimationFrame(() => {
         updatePeerPositions();
-        for (const peerId of peersToStartAnim) {
-          startMouthAnimation(peerId);
+        for (const peer of state.peers) {
+          if (peer.isTalking && peer.peerId !== state.myPeerId) {
+            startMouthAnimation(peer.peerId);
+          }
         }
       });
       return;

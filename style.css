@@ -24,7 +24,17 @@
   }
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-touch-callout: none;
+}
+
+html {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
@@ -37,7 +47,6 @@ body {
   user-select: none;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
-  touch-action: manipulation;
 }
 
 #app {
@@ -239,16 +248,23 @@ body {
   aspect-ratio: 115 / 90;
 }
 
+.peer-icon:has(.mouth-svg) .peer-label {
+  position: absolute;
+  top: 55%;
+  margin-top: 0;
+}
+
 /* --- My Mouth (PTT area - larger than other peers) --- */
 
 .peer-icon.my-mouth {
   gap: 0;
+  touch-action: none;
 }
 
 .peer-icon.my-mouth .peer-label {
-  position: relative;
+  position: absolute;
+  top: 55%;
   z-index: 1;
-  margin-top: clamp(-60px, -10vmin, -100px);
 }
 
 .peer-icon.my-mouth .peer-svg {
@@ -283,6 +299,7 @@ body {
 .peer-label[data-peer-id] {
   pointer-events: auto;
   cursor: pointer;
+  touch-action: none;
 }
 
 /* --- Error view --- */
