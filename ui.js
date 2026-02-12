@@ -593,6 +593,16 @@ function bindPeerIcons() {
 
     if (peerId === state.myPeerId) {
       bindPTT(icon);
+
+      // Tap on label to rename
+      const label = icon.querySelector('.peer-label');
+      if (label) {
+        label.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          startNameEdit();
+        });
+      }
       continue;
     }
 
