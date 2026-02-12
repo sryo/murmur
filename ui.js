@@ -38,10 +38,17 @@ function detectSystemDarkMode() {
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
-function randomBgColor() {
-  const hues = [210, 350, 150, 30, 270];
-  const hue = hues[Math.floor(Math.random() * hues.length)];
-  // Adjust lightness based on system dark mode
+function hashCode(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function colorFromRoomCode(code) {
+  const hue = hashCode(code) % 360;
   const lightness = isDarkMode ? 35 : 50;
   return `hsl(${hue}, 70%, ${lightness}%)`;
 }
@@ -67,8 +74,8 @@ function setBgColor(color) {
 if (window.matchMedia) {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
     isDarkMode = e.matches;
-    if (bgColor) {
-      setBgColor(randomBgColor());
+    if (bgColor && state.roomCode) {
+      setBgColor(colorFromRoomCode(state.roomCode));
       render();
     }
   });
@@ -701,8 +708,8 @@ function getView() {
 }
 
 function render() {
-  if (!bgColor && state.view === 'room') {
-    setBgColor(randomBgColor());
+  if (state.view === 'room' && state.roomCode) {
+    setBgColor(colorFromRoomCode(state.roomCode));
   }
 
   const app = $('#app');
@@ -736,10 +743,7 @@ async function transitionToNewRoom() {
   // Wait for slide-out animation
   await new Promise(r => setTimeout(r, 400));
 
-  // Generate new bg color
-  setBgColor(randomBgColor());
-
-  // Leave and create new room
+  // Leave and create new room (color will be set from new room code)
   leaveRoom();
 
   // After render, add slide-in class
