@@ -1,4 +1,4 @@
-const CACHE = 'wt-v2';
+const CACHE = 'murmur-v1';
 const ASSETS = [
   './',
   './index.html',

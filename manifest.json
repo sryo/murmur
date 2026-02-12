@@ -1,6 +1,6 @@
 {
-  "name": "Walkie-Talkie",
-  "short_name": "WalkieTalkie",
+  "name": "Murmur",
+  "short_name": "Murmur",
   "description": "Push-to-talk voice chat",
   "start_url": "./index.html",
   "display": "standalone",

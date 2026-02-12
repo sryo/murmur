@@ -3,7 +3,7 @@ import state, { batch } from './state.js';
 import { getStream, initAudio, destroyAudio, getRealTrack, getSilentTrack, createRemoteAnalyser, removeRemoteAnalyser } from './audio.js';
 import { joinRoom as trysteroJoin, selfId } from 'https://esm.run/trystero/nostr';
 
-const APP_ID = 'walkie-talkie-brutalist';
+const APP_ID = 'murmur-ptt';
 let room = null;
 let sendTalking = null;
 let sendWhisperMsg = null;

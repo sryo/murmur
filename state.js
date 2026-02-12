@@ -8,7 +8,7 @@ const initial = {
   view: 'loading',
   error: null,
   offline: !navigator.onLine,
-  username: localStorage.getItem('wt-username') || genName(),
+  username: localStorage.getItem('murmur-username') || genName(),
   roomCode: '',
   myPeerId: '',
   peers: [],
@@ -17,7 +17,7 @@ const initial = {
 };
 
 // Persist username so it survives refresh
-localStorage.setItem('wt-username', initial.username);
+localStorage.setItem('murmur-username', initial.username);
 
 const subscribers = new Set();
 let batching = false;

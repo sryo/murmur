@@ -3,8 +3,8 @@
 <filter id="filter0_g_3_3" x="23.8483" y="662.913" width="351.546" height="164.087" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
 <feFlood flood-opacity="0" result="BackgroundImageFix"/>
 <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
-<feTurbulence type="fractalNoise" baseFrequency="0.039808914065361023 0.039808914065361023" numOctaves="3" seed="9888" />
-<feDisplacementMap in="shape" scale="8" xChannelSelector="R" yChannelSelector="G" result="displacedImage" width="100%" height="100%" />
+<feTurbulence type="fractalNoise" baseFrequency="0.02 0.02" numOctaves="3" seed="9888" />
+<feDisplacementMap in="shape" scale="6" xChannelSelector="R" yChannelSelector="G" result="displacedImage" width="100%" height="100%" />
 <feMerge result="effect1_texture_3_3">
 <feMergeNode in="displacedImage"/>
 </feMerge>
@@ -12,8 +12,8 @@
 <filter id="filter1_g_3_3" x="25.0002" y="31" width="344" height="677" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
 <feFlood flood-opacity="0" result="BackgroundImageFix"/>
 <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
-<feTurbulence type="fractalNoise" baseFrequency="0.039808914065361023 0.039808914065361023" numOctaves="3" seed="9888" />
-<feDisplacementMap in="shape" scale="8" xChannelSelector="R" yChannelSelector="G" result="displacedImage" width="100%" height="100%" />
+<feTurbulence type="fractalNoise" baseFrequency="0.02 0.02" numOctaves="3" seed="9888" />
+<feDisplacementMap in="shape" scale="6" xChannelSelector="R" yChannelSelector="G" result="displacedImage" width="100%" height="100%" />
 <feMerge result="effect1_texture_3_3">
 <feMergeNode in="displacedImage"/>
 </feMerge>

@@ -95,20 +95,20 @@ try {
   console.warn('Flubber interpolation setup failed:', e);
 }
 
-// --- Peer position slots on the head ---
-const PEER_SLOTS = [
-  { x: 157, y: 136 },
-  { x: 120, y: 242 },
-  { x: 300, y: 170 },
-  { x: 120, y: 390 },
-  { x: 252, y: 370 },
-  { x: 275, y: 486 },
-  { x: 120, y: 500 },
-  { x: 197, y: 280 },
+// --- Peer position slots (percentage-based for 393x852 viewBox) ---
+const PEER_SLOTS_PCT = [
+  { xPct: 39.95, yPct: 15.96 },  // was { x: 157, y: 136 }
+  { xPct: 30.53, yPct: 28.40 },  // was { x: 120, y: 242 }
+  { xPct: 76.34, yPct: 19.95 },  // was { x: 300, y: 170 }
+  { xPct: 30.53, yPct: 45.77 },  // was { x: 120, y: 390 }
+  { xPct: 64.12, yPct: 43.43 },  // was { x: 252, y: 370 }
+  { xPct: 69.97, yPct: 57.04 },  // was { x: 275, y: 486 }
+  { xPct: 30.53, yPct: 58.69 },  // was { x: 120, y: 500 }
+  { xPct: 50.13, yPct: 32.86 },  // was { x: 197, y: 280 }
 ];
 
-// The mouth position for the user's PTT
-const MY_MOUTH_POSITION = { x: 197, y: 604 };
+// The mouth position for the user's PTT (percentage-based)
+const MY_MOUTH_PCT = { xPct: 50.13, yPct: 70.89 };  // was { x: 197, y: 604 }
 
 // --- Audio-reactive mouth animation ---
 // Track animations per peer ID
@@ -144,15 +144,15 @@ function generateMouthPaths(openness) {
   // Move the 5 middle points down, keep corners (points 2 & 5) fixed
   const move = 40 * openness;
 
-  // Point 1: middle right (74.826, 27) → moves down
+  // Point 1: middle right (74.826, 27) -> moves down
   const p1y = 27 + move;
-  // Point 3: bottom right (83.2237, 49) → moves down
+  // Point 3: bottom right (83.2237, 49) -> moves down
   const p3y = 49 + move;
-  // Point 4: bottom left (41.235, 49) → moves down
+  // Point 4: bottom left (41.235, 49) -> moves down
   const p4y = 49 + move;
-  // Point 6: middle left (48.9518, 28.5556) → moves down
+  // Point 6: middle left (48.9518, 28.5556) -> moves down
   const p6y = 28.5556 + move;
-  // Point 7: middle dip (63.7046, 32.3333) → moves down
+  // Point 7: middle dip (63.7046, 32.3333) -> moves down
   const p7y = 32.3333 + move;
 
   // Upper lip (stays fixed)
@@ -250,146 +250,151 @@ function renderError() {
 function renderRoom() {
   return `
     <div class="room">
-      <div class="channel-figure">
-        ${renderFigure()}
+      <div class="channel-container">
+        <div class="figure-wrapper">
+          ${renderFigureSVG()}
+          <div class="peer-layer" id="peer-layer">
+            ${renderPeerIcons()}
+          </div>
+        </div>
+        ${renderRoomControls()}
       </div>
     </div>`;
 }
 
-function renderFigure() {
-  // Separate my peer from others
-  const myPeer = state.peers.find(p => p.peerId === state.myPeerId);
-  const otherPeers = state.peers.filter(p => p.peerId !== state.myPeerId);
-
+function renderFigureSVG() {
   // Get the figure content - CSS variables inherited from :root
   const figureContent = extractSVGContent(figureSVG);
 
   return `
-    <svg class="channel-svg" viewBox="0 0 393 852" preserveAspectRatio="xMidYMid meet" >
-      <!-- Figure (head + body) -->
+    <svg class="figure-svg" viewBox="0 0 393 852" preserveAspectRatio="none">
       ${figureContent}
-
-      <!-- Other peers (ears/mouths) -->
-      ${otherPeers.map((p, i) => renderPeerIcon(p, PEER_SLOTS[i % PEER_SLOTS.length], i)).join('')}
-
-      <!-- My mouth (PTT area) -->
-      ${myPeer ? renderMyMouth(myPeer) : ''}
-
-      <!-- Room controls -->
-      <g class="room-controls-svg">
-        <text id="room-code" class="peer-label room-code-svg" x="30" y="30" text-anchor="start">${esc(state.roomCode)}</text>
-        <g id="btn-leave" class="btn-leave-svg" transform="translate(${30 + state.roomCode.length * 8}, 18)">
-          <rect x="-4" y="-4" width="24" height="24" fill="transparent"/>
-          <path d="M8 1.5L13 1.5L13 6.5" stroke="var(--stroke)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          <line x1="2" y1="14.5" x2="13" y2="1.5" stroke="var(--stroke)" stroke-width="1.5" stroke-linecap="round"/>
-          <path d="M13 10.5L13 15.5L8 15.5" stroke="var(--stroke)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-          <line x1="9" y1="9" x2="13" y2="15.5" stroke="var(--stroke)" stroke-width="1.5" stroke-linecap="round"/>
-          <line x1="2" y1="2" x2="5.5" y2="5.5" stroke="var(--stroke)" stroke-width="1.5" stroke-linecap="round"/>
-        </g>
-      </g>
     </svg>
   `;
 }
 
-function renderDynamicMouth(peerId, scale = 1) {
+function renderPeerIcons() {
+  // Separate my peer from others
+  const myPeer = state.peers.find(p => p.peerId === state.myPeerId);
+  const otherPeers = state.peers.filter(p => p.peerId !== state.myPeerId);
+
+  let html = '';
+
+  // Render other peers (ears/mouths)
+  otherPeers.forEach((peer, i) => {
+    html += renderPeerIconHTML(peer, PEER_SLOTS_PCT[i % PEER_SLOTS_PCT.length], i);
+  });
+
+  // Render my mouth (PTT area)
+  if (myPeer) {
+    html += renderMyMouthHTML(myPeer);
+  }
+
+  return html;
+}
+
+// Mouth viewBox: tight bounds with room for animation (mouth opens downward by up to 40px)
+const MOUTH_VB_WIDTH = 115;  // x roughly 12-114, plus small padding
+const MOUTH_VB_HEIGHT = 90;  // y roughly 7-89 when fully open
+
+function renderDynamicMouthSVG(peerId) {
   const { upperPath, lowerPath } = generateMouthPaths(0);
   const filterId = `filter_${peerId.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
   return `
-    <!-- Upper lip -->
-    <g filter="url(#${filterId}_upper)">
-      <path class="mouth-upper" data-peer-id="${esc(peerId)}" d="${upperPath}" fill="var(--stroke)" stroke="var(--fill)" stroke-width="1"/>
-    </g>
-    <!-- Lower lip -->
-    <g filter="url(#${filterId}_lower)">
-      <path class="mouth-lower" data-peer-id="${esc(peerId)}" d="${lowerPath}" fill="var(--stroke)" stroke="var(--fill)" stroke-width="1"/>
-    </g>
-    <defs>
-      <filter id="${filterId}_upper" x="0" y="0" width="130" height="45" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-        <feFlood flood-opacity="0" result="BackgroundImageFix"/>
-        <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
-        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" seed="9888"/>
-        <feDisplacementMap in="shape" scale="8" xChannelSelector="R" yChannelSelector="G"/>
-      </filter>
-      <filter id="${filterId}_lower" x="0" y="0" width="130" height="100" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-        <feFlood flood-opacity="0" result="BackgroundImageFix"/>
-        <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
-        <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" seed="9888"/>
-        <feDisplacementMap in="shape" scale="8" xChannelSelector="R" yChannelSelector="G"/>
-      </filter>
-    </defs>
+    <svg class="peer-svg mouth-svg" viewBox="8 5 ${MOUTH_VB_WIDTH} ${MOUTH_VB_HEIGHT}" preserveAspectRatio="xMidYMid meet">
+      <!-- Upper lip -->
+      <g filter="url(#${filterId}_upper)">
+        <path class="mouth-upper" data-peer-id="${esc(peerId)}" d="${upperPath}" fill="var(--stroke)" stroke="var(--fill)" stroke-width="1"/>
+      </g>
+      <!-- Lower lip -->
+      <g filter="url(#${filterId}_lower)">
+        <path class="mouth-lower" data-peer-id="${esc(peerId)}" d="${lowerPath}" fill="var(--stroke)" stroke="var(--fill)" stroke-width="1"/>
+      </g>
+      <defs>
+        <filter id="${filterId}_upper" x="0" y="0" width="130" height="50" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+          <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+          <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+          <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="9888"/>
+          <feDisplacementMap in="shape" scale="4" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+        <filter id="${filterId}_lower" x="0" y="0" width="130" height="100" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+          <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+          <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+          <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="9888"/>
+          <feDisplacementMap in="shape" scale="4" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+      </defs>
+    </svg>
   `;
 }
 
-function renderPeerIcon(peer, slot, index) {
+function renderEarSVG() {
+  const earContent = extractSVGContent(earSVG);
+  return `
+    <svg class="peer-svg ear-svg" viewBox="0 0 ${EAR_WIDTH} ${EAR_HEIGHT}" preserveAspectRatio="xMidYMid meet">
+      ${earContent}
+    </svg>
+  `;
+}
+
+function renderPeerIconHTML(peer, slot, index) {
   const isTalking = peer.isTalking;
   const name = peer.username || peer.peerId;
   const talkingClass = isTalking ? 'talking' : '';
 
-  const width = isTalking ? MOUTH_WIDTH : EAR_WIDTH;
-  const height = isTalking ? MOUTH_HEIGHT : EAR_HEIGHT;
-  const offsetX = slot.x - width / 2;
-  const offsetY = slot.y - height / 2;
-  const labelY = slot.y + height / 2 + 15;
-
   // Use dynamic mouth when talking, static ear otherwise
-  const content = isTalking
-    ? renderDynamicMouth(peer.peerId)
-    : extractSVGContent(earSVG);
-
-  // Padding for hit area to prevent hover flicker
-  const hitPad = 20;
+  const svgContent = isTalking
+    ? renderDynamicMouthSVG(peer.peerId)
+    : renderEarSVG();
 
   return `
-    <g class="peer-icon ${talkingClass}"
-       data-peer-id="${esc(peer.peerId)}"
-       data-index="${index}"
-       data-slot-x="${slot.x}"
-       data-slot-y="${slot.y}">
-      <!-- Invisible hit area -->
-      <rect x="${offsetX - hitPad}" y="${offsetY - hitPad}"
-            width="${width + hitPad * 2}" height="${height + hitPad * 2 + 20}"
-            fill="transparent"/>
-      <g transform="translate(${offsetX}, ${offsetY})">
-        ${content}
-      </g>
-      <text class="peer-label" x="${slot.x}" y="${labelY}" data-peer-id="${esc(peer.peerId)}">${esc(name)}</text>
-    </g>
+    <div class="peer-icon ${talkingClass}"
+         data-peer-id="${esc(peer.peerId)}"
+         data-index="${index}"
+         data-slot-x-pct="${slot.xPct}"
+         data-slot-y-pct="${slot.yPct}"
+         style="left: ${slot.xPct}%; top: ${slot.yPct}%;">
+      <div class="peer-icon-content">
+        ${svgContent}
+      </div>
+      <span class="peer-label" data-peer-id="${esc(peer.peerId)}">${esc(name)}</span>
+    </div>
   `;
 }
 
-function renderMyMouth(peer) {
-  const slot = MY_MOUTH_POSITION;
+function renderMyMouthHTML(peer) {
+  const slot = MY_MOUTH_PCT;
   const isTalking = peer.isTalking || state.isTalking;
   const name = peer.username || peer.peerId;
   const talkingClass = isTalking ? 'talking' : '';
 
-  // Larger size for PTT mouth
-  const scale = 1.5;
-  const scaledWidth = MOUTH_WIDTH * scale;
-  const scaledHeight = MOUTH_HEIGHT * scale;
-  const offsetX = slot.x - scaledWidth / 2;
-  const offsetY = slot.y - scaledHeight / 2;
-  const labelY = slot.y + scaledHeight / 2 + 20;
-
-  // Padding for hit area
-  const hitPad = 30;
-
   return `
-    <g class="peer-icon my-mouth ${talkingClass}"
-       id="ptt-mouth"
-       data-peer-id="${esc(peer.peerId)}"
-       data-slot-x="${slot.x}"
-       data-slot-y="${slot.y}">
-      <!-- Invisible hit area -->
-      <rect x="${offsetX - hitPad}" y="${offsetY - hitPad}"
-            width="${scaledWidth + hitPad * 2}" height="${scaledHeight + hitPad * 2 + 25}"
-            fill="transparent"/>
-      <g transform="translate(${offsetX}, ${offsetY}) scale(${scale})">
-        ${renderDynamicMouth(peer.peerId)}
-      </g>
-      <text class="peer-label" x="${slot.x}" y="${labelY}" data-peer-id="${esc(peer.peerId)}">${esc(name)} (you)</text>
-    </g>
+    <div class="peer-icon my-mouth ${talkingClass}"
+         id="ptt-mouth"
+         data-peer-id="${esc(peer.peerId)}"
+         data-slot-x-pct="${slot.xPct}"
+         data-slot-y-pct="${slot.yPct}"
+         style="left: ${slot.xPct}%; top: ${slot.yPct}%;">
+      <div class="peer-icon-content">
+        ${renderDynamicMouthSVG(peer.peerId, 130, 100)}
+      </div>
+      <span class="peer-label" data-peer-id="${esc(peer.peerId)}">${esc(name)} (you)</span>
+    </div>
+  `;
+}
+
+function renderRoomControls() {
+  return `
+    <div class="room-controls">
+      <span id="room-code" class="room-code">${esc(state.roomCode)}</span>
+      <button id="btn-leave" class="btn-leave" aria-label="New room">
+        <svg viewBox="-1 -4 28 30">
+          <path d="M12 3a9 9 0 1 0 9 9" fill="none" stroke-width="4" stroke-linecap="square"/>
+          <polyline points="10 -2 15 3 10 8" fill="none" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter"/>
+        </svg>
+      </button>
+    </div>
   `;
 }
 
@@ -397,6 +402,15 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// --- Peer positions update ---
+// With preserveAspectRatio="none", the figure fills the entire container
+// so peer-layer just needs to match the container (no offset needed)
+
+function updatePeerPositions() {
+  // No special positioning needed - peer-layer uses inset: 0 to match container
+  // This function is kept for potential future use
 }
 
 // --- Morph animation ---
@@ -413,7 +427,7 @@ function animateMorph(peerId, toTalking) {
   const peerIcon = document.querySelector(`.peer-icon[data-peer-id="${peerId}"]`);
   if (!peerIcon) return;
 
-  // Find fill path by selecting path with CSS variable fill
+  // Find fill path in the SVG
   const fillPath = peerIcon.querySelector('path[fill^="var(--fill"]');
   if (!fillPath) return;
 
@@ -470,31 +484,16 @@ function updatePeerIcon(peerId) {
     return;
   }
 
-  const slotX = parseFloat(peerIcon.dataset.slotX);
-  const slotY = parseFloat(peerIcon.dataset.slotY);
-
-  const width = isTalking ? MOUTH_WIDTH : EAR_WIDTH;
-  const height = isTalking ? MOUTH_HEIGHT : EAR_HEIGHT;
-  const offsetX = slotX - width / 2;
-  const offsetY = slotY - height / 2;
-
-  const innerG = peerIcon.querySelector('g[transform]');
-  if (innerG) {
-    innerG.setAttribute('transform', `translate(${offsetX}, ${offsetY})`);
-    // Use dynamic mouth for talking peers, static ear otherwise
-    const content = isTalking
-      ? renderDynamicMouth(peerId)
-      : extractSVGContent(earSVG);
-    innerG.innerHTML = content;
+  // Update the SVG content
+  const contentWrapper = peerIcon.querySelector('.peer-icon-content');
+  if (contentWrapper) {
+    const svgContent = isTalking
+      ? renderDynamicMouthSVG(peerId)
+      : renderEarSVG();
+    contentWrapper.innerHTML = svgContent;
   }
 
   peerIcon.classList.toggle('talking', isTalking);
-
-  const label = peerIcon.querySelector('.peer-label');
-  if (label) {
-    const labelY = slotY + height / 2 + 15;
-    label.setAttribute('y', labelY);
-  }
 }
 
 // --- whisper hold ---
@@ -532,26 +531,11 @@ function startNameEdit() {
   editingName = true;
   const currentName = state.username;
 
-  const svg = document.querySelector('.channel-svg');
-  if (!svg) return;
-
   // Hide the label while editing
   myLabel.style.opacity = '0';
 
   // Get the label's position in screen coordinates
-  const bbox = myLabel.getBBox();
-  const ctm = myLabel.getScreenCTM();
-
-  // Transform the center of the label to screen coordinates
-  const centerX = bbox.x + bbox.width / 2;
-  const centerY = bbox.y + bbox.height / 2;
-  const screenX = ctm.a * centerX + ctm.c * centerY + ctm.e;
-  const screenY = ctm.b * centerX + ctm.d * centerY + ctm.f;
-
-  // Calculate actual screen font size (12px in SVG * scale factor)
-  const svgFontSize = 12;
-  const scale = Math.sqrt(ctm.a * ctm.a + ctm.b * ctm.b);
-  const screenFontSize = svgFontSize * scale;
+  const labelRect = myLabel.getBoundingClientRect();
 
   const input = document.createElement('input');
   input.type = 'text';
@@ -559,11 +543,11 @@ function startNameEdit() {
   input.maxLength = 20;
   input.style.cssText = `
     position: fixed;
-    left: ${screenX}px;
-    top: ${screenY}px;
+    left: ${labelRect.left + labelRect.width / 2}px;
+    top: ${labelRect.top + labelRect.height / 2}px;
     transform: translate(-50%, -50%);
     padding: 0;
-    font-size: ${screenFontSize}px;
+    font-size: ${getComputedStyle(myLabel).fontSize};
     font-weight: 900;
     font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
     border: none;
@@ -589,7 +573,7 @@ function startNameEdit() {
 
     if (newName !== currentName) {
       state.username = newName;
-      localStorage.setItem('wt-username', newName);
+      localStorage.setItem('murmur-username', newName);
       state.peers = state.peers.map(p =>
         p.peerId === state.myPeerId ? { ...p, username: newName } : p
       );
@@ -727,6 +711,45 @@ function render() {
   currentView = view;
   lastPeersKey = peersKey();
   bind();
+
+  // Update peer positions after render and manage filter animation
+  if (view === 'room') {
+    requestAnimationFrame(() => {
+      updatePeerPositions();
+    });
+    startFilterSeedAnimation();
+  } else {
+    stopFilterSeedAnimation();
+  }
+}
+
+async function transitionToNewRoom() {
+  const currentRoom = document.querySelector('.room');
+  if (!currentRoom) {
+    leaveRoom();
+    return;
+  }
+
+  // Slide out current room
+  currentRoom.classList.add('slide-out');
+
+  // Wait for slide-out animation
+  await new Promise(r => setTimeout(r, 400));
+
+  // Generate new bg color
+  setBgColor(randomBgColor());
+
+  // Leave and create new room
+  leaveRoom();
+
+  // After render, add slide-in class
+  requestAnimationFrame(() => {
+    const newRoom = document.querySelector('.room');
+    if (newRoom) {
+      newRoom.classList.add('slide-in');
+      setTimeout(() => newRoom.classList.remove('slide-in'), 400);
+    }
+  });
 }
 
 function bindRoomControls() {
@@ -742,7 +765,7 @@ function bindRoomControls() {
     }).catch(() => {});
   });
 
-  $('#btn-leave')?.addEventListener('click', leaveRoom);
+  $('#btn-leave')?.addEventListener('click', transitionToNewRoom);
 }
 
 function bind() {
@@ -798,8 +821,8 @@ subscribe((prop) => {
   if (fullRenderProps.has(prop)) { render(); return; }
 
   if (prop === 'peers') {
-    const figure = $('.channel-figure');
-    if (!figure) return;
+    const peerLayer = $('#peer-layer');
+    if (!peerLayer) return;
     if (editingName) return;
 
     const key = peersKey();
@@ -829,16 +852,18 @@ subscribe((prop) => {
         stopMouthAnimation(peerId);
       }
 
-      // Re-render DOM
-      figure.innerHTML = renderFigure();
+      // Re-render peer icons
+      peerLayer.innerHTML = renderPeerIcons();
       bindPeerIcons();
-      bindRoomControls();
       lastPeersKey = key;
 
-      // Start animations after DOM is ready
-      for (const peerId of peersToStartAnim) {
-        startMouthAnimation(peerId);
-      }
+      // Update positions and start animations after DOM is ready
+      requestAnimationFrame(() => {
+        updatePeerPositions();
+        for (const peerId of peersToStartAnim) {
+          startMouthAnimation(peerId);
+        }
+      });
       return;
     }
     return;
@@ -856,6 +881,44 @@ subscribe((prop) => {
     return;
   }
 });
+
+// --- Window resize handler ---
+window.addEventListener('resize', () => {
+  if (state.view === 'room') {
+    updatePeerPositions();
+  }
+});
+
+// --- SVG filter seed animation ---
+let filterSeedInterval = null;
+
+function startFilterSeedAnimation() {
+  if (filterSeedInterval) return;
+  filterSeedInterval = setInterval(() => {
+    const turbulenceElements = document.querySelectorAll('feTurbulence');
+    const filteredElements = document.querySelectorAll('[filter]');
+
+    for (const el of turbulenceElements) {
+      el.setAttribute('seed', Math.floor(Math.random() * 10000));
+    }
+
+    // Force repaint by toggling filter reference
+    for (const el of filteredElements) {
+      const filter = el.getAttribute('filter');
+      el.removeAttribute('filter');
+      // Force reflow
+      void el.offsetWidth;
+      el.setAttribute('filter', filter);
+    }
+  }, 200);
+}
+
+function stopFilterSeedAnimation() {
+  if (filterSeedInterval) {
+    clearInterval(filterSeedInterval);
+    filterSeedInterval = null;
+  }
+}
 
 // --- offline detection ---
 
