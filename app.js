@@ -8,11 +8,15 @@ if ('serviceWorker' in navigator) {
 }
 
 // Boot
-initUI();
+async function boot() {
+  await initUI();
 
-const match = location.hash.match(/^#room=([A-Z0-9]{4})$/i);
-if (match) {
-  joinRoom(match[1].toUpperCase());
-} else {
-  createRoom();
+  const match = location.hash.match(/^#room=([A-Z0-9]{4})$/i);
+  if (match) {
+    joinRoom(match[1].toUpperCase());
+  } else {
+    createRoom();
+  }
 }
+
+boot();
