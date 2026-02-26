@@ -105,15 +105,6 @@ body {
   width: 100%;
 }
 
-
-.room-code-svg {
-  cursor: pointer;
-}
-
-.btn-leave-svg {
-  cursor: pointer;
-}
-
 /* --- Room Controls (HTML overlay) --- */
 
 .room-controls {
@@ -350,31 +341,6 @@ body {
 .btn-retry:active {
   background: rgba(245, 240, 230, 0.1);
   transform: scale(0.94);
-}
-
-/* --- Offline icon --- */
-
-.icon-offline {
-  width: 20px;
-  height: 20px;
-  stroke: rgba(245, 240, 230, 0.5);
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: 0.7;
-}
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 3px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(245, 240, 230, 0.2); border-radius: 3px; }
-
-/* Landscape orientation adjustments */
-@media (orientation: landscape) {
-  .room-controls {
-    flex-direction: row;
-  }
 }
 
 /* --- Room transition animations --- */

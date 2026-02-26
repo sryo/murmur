@@ -10,6 +10,9 @@ let earSVG = '';
 let mouthSVG = '';
 let figureSVG = '';
 
+// Device pixel ratio for scaling SVG filter effects
+const DPR = window.devicePixelRatio || 1;
+
 // Load SVGs at startup
 async function loadSVGs() {
   const [earRes, mouthRes, figureRes] = await Promise.all([
@@ -23,9 +26,16 @@ async function loadSVGs() {
 }
 
 // Extract inner content from SVG (everything inside the root <svg> tag)
+// Also scales feDisplacementMap scale values by DPR for consistent rendering
 function extractSVGContent(svg) {
   const match = svg.match(/<svg[^>]*>([\s\S]*)<\/svg>/i);
-  return match ? match[1] : svg;
+  let content = match ? match[1] : svg;
+  // Scale filter displacement for device pixel ratio
+  content = content.replace(
+    /(<feDisplacementMap[^>]*scale=")(\d+(?:\.\d+)?)(")/gi,
+    (_, before, scale, after) => `${before}${parseFloat(scale) * DPR}${after}`
+  );
+  return content;
 }
 
 // --- System dark mode detection ---
@@ -83,8 +93,6 @@ if (window.matchMedia) {
 // --- Dimensions ---
 const EAR_WIDTH = 80;
 const EAR_HEIGHT = 131;
-const MOUTH_WIDTH = 129;
-const MOUTH_HEIGHT = 56;
 
 // Bounding area for peer placement (within the head)
 const PEER_BOUNDS = { xMin: 22, xMax: 78, yMin: 15, yMax: 55 };
@@ -226,14 +234,8 @@ function updateMouthWithAudio(peerId) {
   const upperFill = document.querySelector(`.mouth-upper[data-peer-id="${peerId}"]`);
   const lowerFill = document.querySelector(`.mouth-lower[data-peer-id="${peerId}"]`);
 
-  if (upperFill) {
-    upperFill.getBBox();
-    upperFill.setAttribute('d', upperPath);
-  }
-  if (lowerFill) {
-    lowerFill.getBBox();
-    lowerFill.setAttribute('d', lowerPath);
-  }
+  if (upperFill) upperFill.setAttribute('d', upperPath);
+  if (lowerFill) lowerFill.setAttribute('d', lowerPath);
 
   animState.animationId = requestAnimationFrame(() => updateMouthWithAudio(peerId));
 }
@@ -273,12 +275,6 @@ function startTalkingAnimation() {
 function stopTalkingAnimation() {
   stopMouthAnimation(state.myPeerId);
 }
-
-// --- inline SVGs ---
-
-const iconShuffle = `<svg viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>`;
-
-const iconOffline = `<svg class="icon-offline" viewBox="0 0 24 24"><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M2 8.82a15 15 0 0 1 4.17-2.65"/><path d="M10.66 5c4.01-.36 8.14.93 11.34 3.76"/><path d="M16.85 11.25a10 10 0 0 1 2.22 1.68"/><path d="M5 12.86a10 10 0 0 1 5.17-2.86"/><circle cx="12" cy="20" r="1"/></svg>`;
 
 const iconMicBlocked = `<svg viewBox="0 0 24 24"><path d="M1 1l22 22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><path d="M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2"/><path d="M19 10v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
 
@@ -352,6 +348,7 @@ const MOUTH_VB_HEIGHT = 90;  // y roughly 7-89 when fully open
 function renderDynamicMouthSVG(peerId) {
   const { upperPath, lowerPath } = generateMouthPaths(0);
   const filterId = `filter_${peerId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+  const filterScale = 4 * DPR;
 
   return `
     <svg class="peer-svg mouth-svg" viewBox="8 5 ${MOUTH_VB_WIDTH} ${MOUTH_VB_HEIGHT}" preserveAspectRatio="xMidYMid meet">
@@ -368,13 +365,13 @@ function renderDynamicMouthSVG(peerId) {
           <feFlood flood-opacity="0" result="BackgroundImageFix"/>
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
           <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="9888"/>
-          <feDisplacementMap in="shape" scale="4" xChannelSelector="R" yChannelSelector="G"/>
+          <feDisplacementMap in="shape" scale="${filterScale}" xChannelSelector="R" yChannelSelector="G"/>
         </filter>
         <filter id="${filterId}_lower" x="0" y="0" width="130" height="100" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
           <feFlood flood-opacity="0" result="BackgroundImageFix"/>
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
           <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" seed="9888"/>
-          <feDisplacementMap in="shape" scale="4" xChannelSelector="R" yChannelSelector="G"/>
+          <feDisplacementMap in="shape" scale="${filterScale}" xChannelSelector="R" yChannelSelector="G"/>
         </filter>
       </defs>
     </svg>
@@ -391,12 +388,12 @@ function renderEarSVG() {
 }
 
 function renderPeerIconHTML(peer, slot, index) {
-  const isTalking = peer.isTalking;
+  const isActive = peer.isTalking || peer.isWhispering;
   const name = peer.username || peer.peerId;
-  const talkingClass = isTalking ? 'talking' : '';
+  const talkingClass = isActive ? 'talking' : '';
 
-  // Use dynamic mouth when talking, static ear otherwise
-  const svgContent = isTalking
+  // Use dynamic mouth when talking or whispering, static ear otherwise
+  const svgContent = isActive
     ? renderDynamicMouthSVG(peer.peerId)
     : renderEarSVG();
 
@@ -429,7 +426,7 @@ function renderMyMouthHTML(peer) {
          data-slot-y-pct="${slot.yPct}"
          style="left: ${slot.xPct}%; top: ${slot.yPct}%;">
       <div class="peer-icon-content">
-        ${renderDynamicMouthSVG(peer.peerId, 130, 100)}
+        ${renderDynamicMouthSVG(peer.peerId)}
       </div>
       <span class="peer-label" data-peer-id="${esc(peer.peerId)}">${esc(name)} (you)</span>
     </div>
@@ -456,15 +453,6 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// --- Peer positions update ---
-// With preserveAspectRatio="none", the figure fills the entire container
-// so peer-layer just needs to match the container (no offset needed)
-
-function updatePeerPositions() {
-  // No special positioning needed - peer-layer uses inset: 0 to match container
-  // This function is kept for potential future use
-}
-
 function updatePeerIcon(peerId) {
   const peer = state.peers.find(p => p.peerId === peerId);
   if (!peer) return;
@@ -472,10 +460,10 @@ function updatePeerIcon(peerId) {
   const peerIcon = document.querySelector(`.peer-icon[data-peer-id="${peerId}"]`);
   if (!peerIcon) return;
 
-  const isTalking = peer.isTalking;
+  const isActive = peer.isTalking || peer.isWhispering;
 
   if (peerId === state.myPeerId) {
-    const isActuallyTalking = isTalking || state.isTalking;
+    const isActuallyTalking = isActive || state.isTalking;
     peerIcon.classList.toggle('talking', isActuallyTalking);
     return;
   }
@@ -483,13 +471,13 @@ function updatePeerIcon(peerId) {
   // Update the SVG content
   const contentWrapper = peerIcon.querySelector('.peer-icon-content');
   if (contentWrapper) {
-    const svgContent = isTalking
+    const svgContent = isActive
       ? renderDynamicMouthSVG(peerId)
       : renderEarSVG();
     contentWrapper.innerHTML = svgContent;
   }
 
-  peerIcon.classList.toggle('talking', isTalking);
+  peerIcon.classList.toggle('talking', isActive);
 }
 
 // --- whisper hold ---
@@ -691,7 +679,7 @@ let currentView = null;
 let lastPeersKey = '';
 
 function peersKey() {
-  return state.peers.map(p => `${p.peerId}:${p.username}:${p.isTalking}`).join('|');
+  return state.peers.map(p => `${p.peerId}:${p.username}:${p.isTalking}:${p.isWhispering}`).join('|');
 }
 
 function getView() {
@@ -711,11 +699,7 @@ function render() {
   lastPeersKey = peersKey();
   bind();
 
-  // Update peer positions after render and manage filter animation
   if (view === 'room') {
-    requestAnimationFrame(() => {
-      updatePeerPositions();
-    });
     startFilterSeedAnimation();
   } else {
     stopFilterSeedAnimation();
@@ -830,15 +814,12 @@ subscribe((prop) => {
       bindPeerIcons();
       lastPeersKey = key;
 
-      // Start mouth animations for talking peers
-      requestAnimationFrame(() => {
-        updatePeerPositions();
-        for (const peer of state.peers) {
-          if (peer.isTalking && peer.peerId !== state.myPeerId) {
-            startMouthAnimation(peer.peerId);
-          }
+      // Start mouth animations for talking/whispering peers
+      for (const peer of state.peers) {
+        if ((peer.isTalking || peer.isWhispering) && peer.peerId !== state.myPeerId) {
+          startMouthAnimation(peer.peerId);
         }
-      });
+      }
       return;
     }
     return;
@@ -854,13 +835,6 @@ subscribe((prop) => {
       myMouth.classList.toggle('talking', state.isTalking);
     }
     return;
-  }
-});
-
-// --- Window resize handler ---
-window.addEventListener('resize', () => {
-  if (state.view === 'room') {
-    updatePeerPositions();
   }
 });
 

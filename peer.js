@@ -200,7 +200,7 @@ export function sendRename(username) {
 
 export async function createRoom() {
   const code = genCode();
-  try { await initAudio(); } catch (e) {
+  try { await initAudio(); } catch {
     state.error = 'mic';
     return;
   }
@@ -210,7 +210,7 @@ export async function createRoom() {
 export async function joinRoom(code) {
   code = code.toUpperCase().trim();
   if (!code) return;
-  try { await initAudio(); } catch (e) {
+  try { await initAudio(); } catch {
     state.error = 'mic';
     return;
   }
