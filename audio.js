@@ -5,6 +5,11 @@ let audioCtx = null;
 let analyser = null;
 let silentTrack = null;
 
+export function initAudioContext() {
+  if (audioCtx) return;
+  audioCtx = new AudioContext();
+}
+
 export async function initAudio() {
   localStream = await navigator.mediaDevices.getUserMedia({
     audio: {
@@ -18,7 +23,7 @@ export async function initAudio() {
   }
   audioCtx = new AudioContext();
   analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 256;
+  analyser.fftSize = 128;
   analyser.smoothingTimeConstant = 0.5;
   const source = audioCtx.createMediaStreamSource(localStream);
   source.connect(analyser);
@@ -43,7 +48,7 @@ export function createRemoteAnalyser(peerId, stream) {
   if (!audioCtx) return null;
   const source = audioCtx.createMediaStreamSource(stream);
   const an = audioCtx.createAnalyser();
-  an.fftSize = 256;
+  an.fftSize = 128;
   an.smoothingTimeConstant = 0.5;
   source.connect(an);
   remoteAnalysers.set(peerId, { source, analyser: an });

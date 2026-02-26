@@ -1,6 +1,6 @@
 // Trystero: decentralized room API, mesh networking, data actions
 import state, { batch } from './state.js';
-import { getStream, initAudio, destroyAudio, getRealTrack, getSilentTrack, createRemoteAnalyser, removeRemoteAnalyser } from './audio.js';
+import { getStream, initAudio, initAudioContext, destroyAudio, getRealTrack, getSilentTrack, createRemoteAnalyser, removeRemoteAnalyser } from './audio.js';
 import { joinRoom as trysteroJoin, selfId } from 'https://esm.run/trystero/nostr';
 
 const APP_ID = 'murmur-ptt';
@@ -9,6 +9,7 @@ let sendTalking = null;
 let sendWhisperMsg = null;
 let sendUsernameMsg = null;
 let sendRenameMsg = null;
+let sendIdleMsg = null;
 const peerTrackState = new Map(); // peerId -> 'real' | 'silent'
 let activeWhisperTarget = null;
 const audioEls = new Map();
@@ -27,6 +28,11 @@ function releaseWakeLock() {
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && room) requestWakeLock();
+
+  if (!sendIdleMsg) return;
+  const idle = document.hidden;
+  sendIdleMsg(idle);
+  updatePeer(selfId, { isIdle: idle });
 });
 
 function genCode() {
@@ -77,13 +83,15 @@ function setupRoom(code) {
   [sendWhisperMsg, getWhisper] = room.makeAction('whisper');
   [sendUsernameMsg, getUsername] = room.makeAction('username');
   [sendRenameMsg, getRename] = room.makeAction('rename');
+  let getIdle;
+  [sendIdleMsg, getIdle] = room.makeAction('idle');
 
   // Set self state
   batch(() => {
     state.myPeerId = selfId;
     state.roomCode = code;
     state.view = 'room';
-    state.peers = [{ peerId: selfId, username: state.username, isTalking: false }];
+    state.peers = [{ peerId: selfId, username: state.username, isTalking: false, isIdle: false }];
   });
   location.hash = `room=${code}`;
 
@@ -104,10 +112,14 @@ function setupRoom(code) {
     updatePeer(peerId, { username });
   });
 
+  getIdle((idle, peerId) => {
+    updatePeer(peerId, { isIdle: idle });
+  });
+
   // Peer lifecycle
   room.onPeerJoin(peerId => {
     if (!state.peers.find(p => p.peerId === peerId)) {
-      state.peers = [...state.peers, { peerId, username: peerId, isTalking: false }];
+      state.peers = [...state.peers, { peerId, username: peerId, isTalking: false, isIdle: false }];
     }
     sendUsernameMsg(state.username, peerId);
     const stream = getStream();
@@ -201,8 +213,8 @@ export function sendRename(username) {
 export async function createRoom() {
   const code = genCode();
   try { await initAudio(); } catch {
-    state.error = 'mic';
-    return;
+    initAudioContext();
+    state.noMic = true;
   }
   setupRoom(code);
 }
@@ -211,8 +223,8 @@ export async function joinRoom(code) {
   code = code.toUpperCase().trim();
   if (!code) return;
   try { await initAudio(); } catch {
-    state.error = 'mic';
-    return;
+    initAudioContext();
+    state.noMic = true;
   }
   setupRoom(code);
 }
@@ -233,6 +245,7 @@ export function leaveRoom() {
   sendWhisperMsg = null;
   sendUsernameMsg = null;
   sendRenameMsg = null;
+  sendIdleMsg = null;
   batch(() => {
     state.peers = [];
     state.isTalking = false;

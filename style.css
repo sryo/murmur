@@ -213,6 +213,11 @@ body {
   touch-action: manipulation;
 }
 
+.peer-icon.idle {
+  opacity: 0.4;
+  transition: opacity 0.8s var(--ease);
+}
+
 .peer-icon:hover {
   transform: translate(-50%, -50%) scale(1.1);
 }
@@ -291,6 +296,11 @@ body {
   pointer-events: auto;
   cursor: pointer;
   touch-action: none;
+}
+
+.peer-icon.no-mic {
+  opacity: 0.35;
+  pointer-events: none;
 }
 
 /* --- Error view --- */

@@ -14,6 +14,7 @@ const initial = {
   peers: [],
   isTalking: false,
   whisperTarget: null,
+  noMic: false,
 };
 
 // Persist username so it survives refresh

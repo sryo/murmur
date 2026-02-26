@@ -391,6 +391,7 @@ function renderPeerIconHTML(peer, slot, index) {
   const isActive = peer.isTalking || peer.isWhispering;
   const name = peer.username || peer.peerId;
   const talkingClass = isActive ? 'talking' : '';
+  const idleClass = peer.isIdle ? 'idle' : '';
 
   // Use dynamic mouth when talking or whispering, static ear otherwise
   const svgContent = isActive
@@ -398,7 +399,7 @@ function renderPeerIconHTML(peer, slot, index) {
     : renderEarSVG();
 
   return `
-    <div class="peer-icon ${talkingClass}"
+    <div class="peer-icon ${talkingClass} ${idleClass}"
          data-peer-id="${esc(peer.peerId)}"
          data-index="${index}"
          data-slot-x-pct="${slot.xPct}"
@@ -417,9 +418,11 @@ function renderMyMouthHTML(peer) {
   const isTalking = peer.isTalking || state.isTalking;
   const name = peer.username || peer.peerId;
   const talkingClass = isTalking ? 'talking' : '';
+  const idleClass = peer.isIdle ? 'idle' : '';
+  const noMicClass = state.noMic ? 'no-mic' : '';
 
   return `
-    <div class="peer-icon my-mouth ${talkingClass}"
+    <div class="peer-icon my-mouth ${talkingClass} ${idleClass} ${noMicClass}"
          id="ptt-mouth"
          data-peer-id="${esc(peer.peerId)}"
          data-slot-x-pct="${slot.xPct}"
@@ -580,7 +583,7 @@ function bindPeerIcons() {
     const peerId = icon.getAttribute('data-peer-id');
 
     if (peerId === state.myPeerId) {
-      bindPTT(icon);
+      if (!state.noMic) bindPTT(icon);
 
       // Tap on label to rename
       const label = icon.querySelector('.peer-label');
@@ -598,6 +601,7 @@ function bindPeerIcons() {
 
     const start = (e) => {
       e.preventDefault();
+      if (state.noMic) return;
       // Capture pointer
       if (e.pointerId !== undefined) {
         icon.setPointerCapture(e.pointerId);
@@ -679,7 +683,7 @@ let currentView = null;
 let lastPeersKey = '';
 
 function peersKey() {
-  return state.peers.map(p => `${p.peerId}:${p.username}:${p.isTalking}:${p.isWhispering}`).join('|');
+  return state.peers.map(p => `${p.peerId}:${p.username}:${p.isTalking}:${p.isWhispering}:${p.isIdle}`).join('|');
 }
 
 function getView() {
@@ -771,6 +775,7 @@ document.addEventListener('gestureend', (e) => e.preventDefault(), { passive: fa
 document.addEventListener('keydown', (e) => {
   if (e.code !== 'Space' || e.repeat || state.view !== 'room') return;
   e.preventDefault();
+  if (state.noMic) return;
   if (!state.isTalking && !state.whisperTarget) {
     state.isTalking = true;
     setTalking(true);
