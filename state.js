@@ -15,6 +15,12 @@ const initial = {
   isTalking: false,
   whisperTarget: null,
   noMic: false,
+  knockEnabled: false,
+  admitted: true,
+  knockWaiting: false,
+  pendingKnocks: [],
+  isCreator: false,
+  creatorId: null,
 };
 
 // Persist username so it survives refresh
@@ -54,7 +60,10 @@ export function batch(fn) {
   const changes = pendingChanges.slice();
   pendingChanges = [];
   const map = new Map();
-  for (const c of changes) map.set(c.prop, c);
+  for (const c of changes) {
+    if (map.has(c.prop)) map.get(c.prop).value = c.value;
+    else map.set(c.prop, { prop: c.prop, oldValue: c.oldValue, value: c.value });
+  }
   for (const { prop, value, oldValue } of map.values()) {
     for (const sub of subscribers) sub(prop, value, oldValue);
   }

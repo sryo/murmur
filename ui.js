@@ -1,7 +1,7 @@
 // UI: DOM rendering, PTT event binding
 import state, { subscribe } from './state.js';
 import { setTalking, getAnalyser, getRemoteAnalyser } from './audio.js';
-import { leaveRoom, createRoom, sendTalkingState, startWhisper, stopWhisper, sendRename } from './peer.js';
+import { leaveRoom, createRoom, sendTalkingState, startWhisper, stopWhisper, sendRename, toggleKnockMode, approveKnock, rejectKnock } from './peer.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -278,6 +278,9 @@ function stopTalkingAnimation() {
 
 const iconMicBlocked = `<svg viewBox="0 0 24 24"><path d="M1 1l22 22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><path d="M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2"/><path d="M19 10v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
 
+const iconLockOpen = `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`;
+const iconLockClosed = `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+
 // --- render ---
 
 function renderLoading() {
@@ -296,6 +299,41 @@ function renderError() {
     </div>`;
 }
 
+function renderKnocking() {
+  return `
+    <div class="knocking">
+      <div class="knocking-icon">${iconLockClosed}</div>
+      <p class="knocking-msg">Waiting to be let in...</p>
+      <button id="btn-knock-leave" class="btn-retry">Leave</button>
+    </div>`;
+}
+
+function renderRejected() {
+  return `
+    <div class="knocking">
+      <div class="knocking-icon">${iconLockClosed}</div>
+      <p class="knocking-msg">Not allowed</p>
+    </div>`;
+}
+
+function renderKnockNotifications() {
+  if (state.pendingKnocks.length === 0) return '';
+  let html = '<div class="knock-notifications">';
+  for (const knock of state.pendingKnocks) {
+    const name = esc(knock.username || knock.peerId);
+    html += `
+      <div class="knock-notification" data-knock-peer="${esc(knock.peerId)}">
+        <span class="knock-name">${name} wants to join</span>
+        <div class="knock-actions">
+          <button class="knock-approve" data-peer-id="${esc(knock.peerId)}">Let in</button>
+          <button class="knock-reject" data-peer-id="${esc(knock.peerId)}">Deny</button>
+        </div>
+      </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
 function renderRoom() {
   return `
     <div class="room">
@@ -308,6 +346,7 @@ function renderRoom() {
         </div>
         ${renderRoomControls()}
       </div>
+      ${renderKnockNotifications()}
     </div>`;
 }
 
@@ -437,9 +476,21 @@ function renderMyMouthHTML(peer) {
 }
 
 function renderRoomControls() {
+  const lockIcon = state.knockEnabled ? iconLockClosed : iconLockOpen;
+  const lockActiveClass = state.knockEnabled ? 'active' : '';
+
+  // Creator gets a clickable button, others see a read-only indicator (only when knock is on)
+  let lockHTML = '';
+  if (state.isCreator) {
+    lockHTML = `<button id="btn-lock" class="btn-lock ${lockActiveClass}" aria-label="Toggle knock mode">${lockIcon}</button>`;
+  } else if (state.knockEnabled) {
+    lockHTML = `<span class="lock-indicator">${iconLockClosed}</span>`;
+  }
+
   return `
     <div class="room-controls">
       <span id="room-code" class="room-code">${esc(state.roomCode)}</span>
+      ${lockHTML}
       <button id="btn-leave" class="btn-leave" aria-label="New room">
         <svg viewBox="-1 -4 28 30">
           <path d="M12 3a9 9 0 1 0 9 9" fill="none" stroke-width="4" stroke-linecap="square"/>
@@ -688,17 +739,25 @@ function peersKey() {
 
 function getView() {
   if (state.error) return 'error';
+  if (state.view === 'knocking') return 'knocking';
+  if (state.view === 'rejected') return 'rejected';
   return state.view === 'room' ? 'room' : 'loading';
 }
 
 function render() {
-  if (state.view === 'room' && state.roomCode) {
+  if ((state.view === 'room' || state.view === 'knocking' || state.view === 'rejected') && state.roomCode) {
     setBgColor(colorFromRoomCode(state.roomCode));
   }
 
   const app = $('#app');
   const view = getView();
-  app.innerHTML = view === 'room' ? renderRoom() : view === 'error' ? renderError() : renderLoading();
+  const viewHTML = {
+    room: renderRoom,
+    error: renderError,
+    knocking: renderKnocking,
+    rejected: renderRejected,
+  };
+  app.innerHTML = (viewHTML[view] || renderLoading)();
   currentView = view;
   lastPeersKey = peersKey();
   bind();
@@ -714,6 +773,7 @@ async function transitionToNewRoom() {
   const currentRoom = document.querySelector('.room');
   if (!currentRoom) {
     leaveRoom();
+    createRoom();
     return;
   }
 
@@ -725,6 +785,7 @@ async function transitionToNewRoom() {
 
   // Leave and create new room (color will be set from new room code)
   leaveRoom();
+  createRoom();
 
   // After render, add slide-in class
   requestAnimationFrame(() => {
@@ -750,6 +811,18 @@ function bindRoomControls() {
   });
 
   $('#btn-leave')?.addEventListener('click', transitionToNewRoom);
+  $('#btn-lock')?.addEventListener('click', toggleKnockMode);
+}
+
+function bindKnockNotifications() {
+  const approveButtons = document.querySelectorAll('.knock-approve');
+  const rejectButtons = document.querySelectorAll('.knock-reject');
+  for (const btn of approveButtons) {
+    btn.addEventListener('click', () => approveKnock(btn.dataset.peerId));
+  }
+  for (const btn of rejectButtons) {
+    btn.addEventListener('click', () => rejectKnock(btn.dataset.peerId));
+  }
 }
 
 function bind() {
@@ -760,10 +833,15 @@ function bind() {
     });
     return;
   }
+  if (getView() === 'knocking') {
+    $('#btn-knock-leave')?.addEventListener('click', leaveRoom);
+    return;
+  }
   if (getView() !== 'room') return;
 
   bindPeerIcons();
   bindRoomControls();
+  bindKnockNotifications();
 }
 
 // --- prevent iOS zoom gestures ---
@@ -800,7 +878,7 @@ document.addEventListener('keyup', (e) => {
 
 // --- subscriptions ---
 
-const fullRenderProps = new Set(['view', 'roomCode', 'error', 'offline']);
+const fullRenderProps = new Set(['view', 'roomCode', 'error', 'offline', 'knockWaiting', 'admitted']);
 
 subscribe((prop) => {
   const view = getView();
@@ -814,14 +892,23 @@ subscribe((prop) => {
 
     const key = peersKey();
     if (key !== lastPeersKey) {
+      // Stop active animations before destroying their DOM targets
+      for (const peerId of [...mouthAnimations.keys()]) {
+        stopMouthAnimation(peerId);
+      }
+
       // Re-render peer icons
       peerLayer.innerHTML = renderPeerIcons();
       bindPeerIcons();
       lastPeersKey = key;
 
-      // Start mouth animations for talking/whispering peers
+      // Restart mouth animations for all active peers
       for (const peer of state.peers) {
-        if ((peer.isTalking || peer.isWhispering) && peer.peerId !== state.myPeerId) {
+        if (peer.peerId === state.myPeerId) {
+          if (state.isTalking || state.whisperTarget) {
+            startMouthAnimation(peer.peerId);
+          }
+        } else if (peer.isTalking || peer.isWhispering) {
           startMouthAnimation(peer.peerId);
         }
       }
@@ -839,6 +926,34 @@ subscribe((prop) => {
     if (myMouth) {
       myMouth.classList.toggle('talking', state.isTalking);
     }
+    return;
+  }
+
+  if (prop === 'knockEnabled') {
+    // Re-render room controls to update lock icon
+    const controls = document.querySelector('.room-controls');
+    if (controls) {
+      controls.outerHTML = renderRoomControls();
+      bindRoomControls();
+    }
+    return;
+  }
+
+  if (prop === 'pendingKnocks') {
+    // Update knock notifications overlay
+    const existing = document.querySelector('.knock-notifications');
+    const newHTML = renderKnockNotifications();
+    if (existing) {
+      if (newHTML) {
+        existing.outerHTML = newHTML;
+      } else {
+        existing.remove();
+      }
+    } else if (newHTML) {
+      const roomEl = document.querySelector('.room');
+      if (roomEl) roomEl.insertAdjacentHTML('beforeend', newHTML);
+    }
+    bindKnockNotifications();
     return;
   }
 });

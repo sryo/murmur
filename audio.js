@@ -4,13 +4,20 @@ let localStream = null;
 let audioCtx = null;
 let analyser = null;
 let silentTrack = null;
+let initPromise = null;
 
 export function initAudioContext() {
   if (audioCtx) return;
   audioCtx = new AudioContext();
 }
 
-export async function initAudio() {
+export function initAudio() {
+  if (initPromise) return initPromise;
+  initPromise = _initAudio().finally(() => { initPromise = null; });
+  return initPromise;
+}
+
+async function _initAudio() {
   localStream = await navigator.mediaDevices.getUserMedia({
     audio: {
       echoCancellation: true,
@@ -90,6 +97,7 @@ export function setTalking(talking) {
 }
 
 export function destroyAudio() {
+  initPromise = null;
   if (localStream) {
     for (const track of localStream.getTracks()) track.stop();
     localStream = null;
