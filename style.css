@@ -374,45 +374,20 @@ body {
   opacity: 1 !important;
 }
 
-/* --- Lock button --- */
-
-.btn-lock {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.5;
-  transition: opacity 0.2s var(--ease);
-}
+/* --- Lock button (inherits base from .room-controls button/svg) --- */
 
 .btn-lock svg {
-  width: clamp(18px, 4vmin, 28px);
-  height: clamp(18px, 4vmin, 28px);
-  stroke: var(--stroke);
-  fill: none;
-  stroke-width: 1.5;
-  stroke-linecap: square;
-  stroke-linejoin: miter;
-  transition: transform 0.2s var(--ease);
+  width: clamp(14px, 3.2vmin, 22px);
+  height: clamp(14px, 3.2vmin, 22px);
+  stroke-width: 4;
+  stroke-linecap: butt;
 }
 
-.btn-lock.active {
-  opacity: 1;
+.btn-lock {
 }
 
 .btn-lock.active svg {
   fill: var(--stroke);
-}
-
-.btn-lock:hover svg {
-  transform: scale(1.1);
-}
-
-.btn-lock:active svg {
-  transform: scale(0.95);
 }
 
 .lock-indicator {
@@ -433,26 +408,28 @@ body {
 
 /* --- Knocking view --- */
 
-.knocking {
+.knocking .knock-overlay {
+  position: absolute;
+  bottom: calc(40px + env(safe-area-inset-bottom));
+  left: 0; right: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  height: 100dvh;
-  gap: 20px;
-  padding: 16px;
-  animation: viewIn 0.4s var(--ease) both;
+  gap: 16px;
+  z-index: 10;
 }
 
-.knocking-icon svg {
-  width: 64px;
-  height: 64px;
-  stroke: var(--stroke);
-  fill: none;
-  stroke-width: 1.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.knocking .knock-mouth-icon {
+  position: absolute;
+  left: 50%; top: 72%;
+  transform: translate(-50%, -50%);
+}
+
+.knocking .knock-mouth-icon .peer-svg {
   animation: loadingPulse 1.6s var(--ease) infinite;
+  width: clamp(140px, 35vmin, 300px);
+  height: auto;
+  aspect-ratio: 115 / 90;
 }
 
 .knocking-msg {
@@ -461,6 +438,23 @@ body {
   text-align: center;
   color: var(--stroke);
   opacity: 0.7;
+}
+
+.knock-dots {
+  display: flex;
+  gap: 10px;
+}
+.knock-dots .dot {
+  width: 10px; height: 10px;
+  background: var(--stroke);
+  animation: dotBounce 1.4s var(--ease) infinite both;
+}
+.knock-dots .dot:nth-child(2) { animation-delay: 0.16s; }
+.knock-dots .dot:nth-child(3) { animation-delay: 0.32s; }
+
+@keyframes dotBounce {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
 }
 
 /* --- Knock notifications --- */
