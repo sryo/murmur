@@ -17,9 +17,7 @@ const initial = {
   noMic: false,
   knockEnabled: false,
   admitted: true,
-  knockWaiting: false,
   pendingKnocks: [],
-  isCreator: false,
   creatorId: null,
 };
 

@@ -1,7 +1,7 @@
 // UI: DOM rendering, PTT event binding
 import state, { subscribe } from './state.js';
 import { setTalking, getAnalyser, getRemoteAnalyser } from './audio.js';
-import { leaveRoom, createRoom, sendTalkingState, startWhisper, stopWhisper, sendRename, toggleKnockMode, approveKnock, rejectKnock } from './peer.js';
+import { leaveRoom, createRoom, sendTalkingState, startWhisper, stopWhisper, sendRename, toggleKnockMode, resolveKnock } from './peer.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -278,8 +278,8 @@ function stopTalkingAnimation() {
 
 const iconMicBlocked = `<svg viewBox="0 0 24 24"><path d="M1 1l22 22"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><path d="M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2"/><path d="M19 10v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
 
-const iconLockOpen = `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>`;
-const iconLockClosed = `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`;
+const iconLockOpen = `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11"/><path d="M7 11V7a5 5 0 0 1 10 0" fill="none"/></svg>`;
+const iconLockClosed = `<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11"/><path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none"/></svg>`;
 
 // --- render ---
 
@@ -299,21 +299,30 @@ function renderError() {
     </div>`;
 }
 
-function renderKnocking() {
+function renderKnockScreen(message) {
   return `
-    <div class="knocking">
-      <div class="knocking-icon">${iconLockClosed}</div>
-      <p class="knocking-msg">Waiting to be let in...</p>
-      <button id="btn-knock-leave" class="btn-retry">Leave</button>
+    <div class="room knocking">
+      <div class="channel-container">
+        <div class="figure-wrapper">
+          ${renderFigureSVG()}
+          <div class="peer-layer">
+            <div class="knock-mouth-icon">
+              ${renderDynamicMouthSVG('knock')}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="knock-overlay">
+        ${message}
+      </div>
     </div>`;
 }
 
+function renderKnocking() {
+  return renderKnockScreen('<div class="knock-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>');
+}
 function renderRejected() {
-  return `
-    <div class="knocking">
-      <div class="knocking-icon">${iconLockClosed}</div>
-      <p class="knocking-msg">Not allowed</p>
-    </div>`;
+  return renderKnockScreen('<p class="knocking-msg">no</p>');
 }
 
 function renderKnockNotifications() {
@@ -323,10 +332,10 @@ function renderKnockNotifications() {
     const name = esc(knock.username || knock.peerId);
     html += `
       <div class="knock-notification" data-knock-peer="${esc(knock.peerId)}">
-        <span class="knock-name">${name} wants to join</span>
+        <span class="knock-name">${name}</span>
         <div class="knock-actions">
-          <button class="knock-approve" data-peer-id="${esc(knock.peerId)}">Let in</button>
-          <button class="knock-reject" data-peer-id="${esc(knock.peerId)}">Deny</button>
+          <button class="knock-approve" data-peer-id="${esc(knock.peerId)}"><svg viewBox="0 0 24 24"><polyline points="4 12 10 18 20 6"/></svg></button>
+          <button class="knock-reject" data-peer-id="${esc(knock.peerId)}"><svg viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
         </div>
       </div>`;
   }
@@ -481,7 +490,7 @@ function renderRoomControls() {
 
   // Creator gets a clickable button, others see a read-only indicator (only when knock is on)
   let lockHTML = '';
-  if (state.isCreator) {
+  if (state.creatorId === state.myPeerId) {
     lockHTML = `<button id="btn-lock" class="btn-lock ${lockActiveClass}" aria-label="Toggle knock mode">${lockIcon}</button>`;
   } else if (state.knockEnabled) {
     lockHTML = `<span class="lock-indicator">${iconLockClosed}</span>`;
@@ -762,7 +771,7 @@ function render() {
   lastPeersKey = peersKey();
   bind();
 
-  if (view === 'room') {
+  if (view === 'room' || view === 'knocking' || view === 'rejected') {
     startFilterSeedAnimation();
   } else {
     stopFilterSeedAnimation();
@@ -818,10 +827,10 @@ function bindKnockNotifications() {
   const approveButtons = document.querySelectorAll('.knock-approve');
   const rejectButtons = document.querySelectorAll('.knock-reject');
   for (const btn of approveButtons) {
-    btn.addEventListener('click', () => approveKnock(btn.dataset.peerId));
+    btn.addEventListener('click', () => resolveKnock(btn.dataset.peerId, true));
   }
   for (const btn of rejectButtons) {
-    btn.addEventListener('click', () => rejectKnock(btn.dataset.peerId));
+    btn.addEventListener('click', () => resolveKnock(btn.dataset.peerId, false));
   }
 }
 
@@ -833,10 +842,7 @@ function bind() {
     });
     return;
   }
-  if (getView() === 'knocking') {
-    $('#btn-knock-leave')?.addEventListener('click', leaveRoom);
-    return;
-  }
+  if (getView() === 'knocking' || getView() === 'rejected') return;
   if (getView() !== 'room') return;
 
   bindPeerIcons();
@@ -878,7 +884,7 @@ document.addEventListener('keyup', (e) => {
 
 // --- subscriptions ---
 
-const fullRenderProps = new Set(['view', 'roomCode', 'error', 'offline', 'knockWaiting', 'admitted']);
+const fullRenderProps = new Set(['view', 'roomCode', 'error', 'offline', 'admitted']);
 
 subscribe((prop) => {
   const view = getView();

@@ -75,6 +75,18 @@ function updatePeer(peerId, updates) {
   );
 }
 
+function makePeer(peerId, username) {
+  return { peerId, username: username || peerId, isTalking: false, isIdle: false };
+}
+
+function removeKnock(peerId) {
+  state.pendingKnocks = state.pendingKnocks.filter(k => k.peerId !== peerId);
+}
+
+function sendKnock(msg, peerId) {
+  if (sendKnockMsg) sendKnockMsg(msg, peerId);
+}
+
 // --- room setup ---
 
 function setupRoom(code) {
@@ -97,7 +109,7 @@ function setupRoom(code) {
     state.roomCode = code;
     if (state.admitted) {
       state.view = 'room';
-      state.peers = [{ peerId: selfId, username: state.username, isTalking: false, isIdle: false }];
+      state.peers = [makePeer(selfId, state.username)];
     } else {
       state.view = 'knocking';
       state.peers = [];
@@ -108,9 +120,7 @@ function setupRoom(code) {
   // Receive handlers
   getUsername((username, peerId) => {
     updatePeer(peerId, { username });
-    // Also update pendingKnocks and pendingPeerInfo
-    const knock = state.pendingKnocks.find(k => k.peerId === peerId);
-    if (knock) {
+    if (state.pendingKnocks.some(k => k.peerId === peerId)) {
       state.pendingKnocks = state.pendingKnocks.map(k =>
         k.peerId === peerId ? { ...k, username } : k
       );
@@ -138,22 +148,19 @@ function setupRoom(code) {
 
   // Knock receive handler
   getKnock((msg, peerId) => {
-    if (msg.type === 'required') {
-      state.knockWaiting = true;
-    } else if (msg.type === 'admitted') {
+    if (msg.type === 'admitted') {
       admitSelf();
     } else if (msg.type === 'mode') {
       batch(() => {
         state.knockEnabled = msg.enabled;
         state.creatorId = msg.creatorId;
-      });
-      // Auto-admit pending knockers if knock turned off
-      if (!msg.enabled && state.pendingKnocks.length > 0) {
-        for (const k of state.pendingKnocks) {
-          moveKnockToPeers(k.peerId);
+        if (!msg.enabled && state.pendingKnocks.length > 0) {
+          for (const k of state.pendingKnocks) {
+            moveKnockToPeers(k.peerId);
+          }
+          state.pendingKnocks = [];
         }
-        state.pendingKnocks = [];
-      }
+      });
     } else if (msg.type === 'reply') {
       if (msg.targetPeerId === selfId) {
         if (msg.approved) {
@@ -163,13 +170,8 @@ function setupRoom(code) {
           setTimeout(() => { leaveRoom(); createRoom(); }, 2000);
         }
       } else if (state.admitted) {
-        // I'm an existing peer — update my knock/peer lists
-        if (msg.approved) {
-          moveKnockToPeers(msg.targetPeerId);
-          state.pendingKnocks = state.pendingKnocks.filter(k => k.peerId !== msg.targetPeerId);
-        } else {
-          state.pendingKnocks = state.pendingKnocks.filter(k => k.peerId !== msg.targetPeerId);
-        }
+        if (msg.approved) moveKnockToPeers(msg.targetPeerId);
+        removeKnock(msg.targetPeerId);
       }
     }
   });
@@ -183,8 +185,8 @@ function setupRoom(code) {
         if (!state.pendingKnocks.find(k => k.peerId === peerId)) {
           state.pendingKnocks = [...state.pendingKnocks, { peerId, username: peerId }];
         }
-        sendKnockMsg({ type: 'required' }, peerId);
-        sendKnockMsg({ type: 'mode', enabled: true, creatorId: state.creatorId || selfId }, peerId);
+        sendKnock({ type: 'required' }, peerId);
+        sendKnock({ type: 'mode', enabled: true, creatorId: state.creatorId || selfId }, peerId);
         // Send stream so knocker hears the room (lobby preview)
         const stream = getStream();
         if (stream) room.addStream(stream, peerId);
@@ -192,9 +194,9 @@ function setupRoom(code) {
       } else {
         // No knock: add peer normally
         if (!state.peers.find(p => p.peerId === peerId)) {
-          state.peers = [...state.peers, { peerId, username: peerId, isTalking: false, isIdle: false }];
+          state.peers = [...state.peers, makePeer(peerId)];
         }
-        sendKnockMsg({ type: 'admitted' }, peerId);
+        sendKnock({ type: 'admitted' }, peerId);
         sendUsernameMsg(state.username, peerId);
         const stream = getStream();
         if (stream) {
@@ -218,7 +220,7 @@ function setupRoom(code) {
 
   room.onPeerLeave(peerId => {
     state.peers = state.peers.filter(p => p.peerId !== peerId);
-    state.pendingKnocks = state.pendingKnocks.filter(k => k.peerId !== peerId);
+    removeKnock(peerId);
     pendingPeerInfo.delete(peerId);
     removeRemoteAudio(peerId);
     peerTrackState.delete(peerId);
@@ -245,12 +247,11 @@ function admitSelf() {
   if (admitTimeout) { clearTimeout(admitTimeout); admitTimeout = null; }
   batch(() => {
     state.admitted = true;
-    state.knockWaiting = false;
     state.view = 'room';
     // Build peers from pendingPeerInfo + self
-    const peers = [{ peerId: selfId, username: state.username, isTalking: false, isIdle: false }];
+    const peers = [makePeer(selfId, state.username)];
     for (const [peerId, info] of pendingPeerInfo) {
-      peers.push({ peerId, username: info.username || peerId, isTalking: false, isIdle: false });
+      peers.push(makePeer(peerId, info.username));
     }
     state.peers = peers;
   });
@@ -268,8 +269,7 @@ function admitSelf() {
 function moveKnockToPeers(peerId) {
   if (state.peers.find(p => p.peerId === peerId)) return;
   const knock = state.pendingKnocks.find(k => k.peerId === peerId);
-  const username = knock ? knock.username : peerId;
-  state.peers = [...state.peers, { peerId, username, isTalking: false, isIdle: false }];
+  state.peers = [...state.peers, makePeer(peerId, knock?.username)];
 }
 
 // --- whisper ---
@@ -334,42 +334,29 @@ export function sendRename(username) {
 }
 
 export function toggleKnockMode() {
-  if (!state.isCreator) return;
+  if (state.creatorId !== state.myPeerId) return;
   const enabled = !state.knockEnabled;
-  state.knockEnabled = enabled;
-  if (sendKnockMsg) {
-    sendKnockMsg({ type: 'mode', enabled, creatorId: selfId });
-  }
-  // Auto-admit all pending knockers when turning off
-  if (!enabled && state.pendingKnocks.length > 0) {
-    for (const k of state.pendingKnocks) {
-      if (sendKnockMsg) {
-        sendKnockMsg({ type: 'reply', targetPeerId: k.peerId, approved: true });
+  batch(() => {
+    state.knockEnabled = enabled;
+    if (!enabled && state.pendingKnocks.length > 0) {
+      for (const k of state.pendingKnocks) {
+        sendKnock({ type: 'reply', targetPeerId: k.peerId, approved: true });
+        moveKnockToPeers(k.peerId);
       }
-      moveKnockToPeers(k.peerId);
+      state.pendingKnocks = [];
     }
-    state.pendingKnocks = [];
-  }
+  });
+  sendKnock({ type: 'mode', enabled, creatorId: selfId });
 }
 
-export function approveKnock(peerId) {
-  if (sendKnockMsg) {
-    sendKnockMsg({ type: 'reply', targetPeerId: peerId, approved: true });
-  }
-  moveKnockToPeers(peerId);
-  state.pendingKnocks = state.pendingKnocks.filter(k => k.peerId !== peerId);
-}
-
-export function rejectKnock(peerId) {
-  if (sendKnockMsg) {
-    sendKnockMsg({ type: 'reply', targetPeerId: peerId, approved: false });
-  }
-  state.pendingKnocks = state.pendingKnocks.filter(k => k.peerId !== peerId);
+export function resolveKnock(peerId, approved) {
+  sendKnock({ type: 'reply', targetPeerId: peerId, approved });
+  if (approved) moveKnockToPeers(peerId);
+  removeKnock(peerId);
 }
 
 export async function createRoom() {
   const code = genCode();
-  state.isCreator = true;
   state.admitted = true;
   state.creatorId = null; // will be set to selfId after setupRoom
   try { await initAudio(); } catch {
@@ -383,7 +370,6 @@ export async function createRoom() {
 export async function joinRoom(code) {
   code = code.toUpperCase().trim();
   if (!code) return;
-  state.isCreator = false;
   state.admitted = false;
   try { await initAudio(); } catch {
     initAudioContext();
@@ -393,7 +379,6 @@ export async function joinRoom(code) {
   // Empty room: auto-admit after 3s if no peers respond
   admitTimeout = setTimeout(() => {
     if (!state.admitted) {
-      state.isCreator = true;
       state.creatorId = selfId;
       admitSelf();
     }
@@ -425,9 +410,7 @@ export function leaveRoom() {
     state.isTalking = false;
     state.knockEnabled = false;
     state.admitted = true;
-    state.knockWaiting = false;
     state.pendingKnocks = [];
-    state.isCreator = false;
     state.creatorId = null;
   });
 }
