@@ -2,7 +2,7 @@
 import { render, html } from 'https://esm.run/lit-html@3.3.3';
 import { repeat } from 'https://esm.run/lit-html@3.3.3/directives/repeat.js';
 import { unsafeSVG } from 'https://esm.run/lit-html@3.3.3/directives/unsafe-svg.js';
-import state, { subscribe, updatePeer } from './state.js';
+import state, { subscribe, updatePeer, isActive } from './state.js';
 import { setTalking } from './audio.js';
 import {
   leaveRoom, createRoom, sendTalkingState, startWhisper, stopWhisper,
@@ -21,14 +21,30 @@ const EAR_HEIGHT = 131;
 const PEER_BOUNDS = { xMin: 22, xMax: 78, yMin: 15, yMax: 55 };
 const MY_MOUTH_PCT = { xPct: 50, yPct: 72 };
 
+// Views that show the figure + animated grain (vs loading/error)
+const ROOM_VIEWS = new Set(['room', 'knocking', 'rejected']);
+
 function seededRandom(seed) {
   const x = Math.sin(seed * 9999) * 10000;
   return x - Math.floor(x);
 }
 
-// Deterministic peer placement with spring repulsion, kept clear of the PTT mouth
+// Deterministic peer placement with spring repulsion, kept clear of the PTT mouth.
+// The physics depend only on the peer set, so memoize by it — renders fire on every
+// talking/idle toggle and must not re-run the O(n²)×15 solver each time.
+const positionCache = { key: '', byId: new Map() };
+
 function calculatePeerPositions(peerIds) {
   if (!peerIds.length) return [];
+  const key = [...peerIds].sort().join(',');
+  if (key !== positionCache.key) {
+    positionCache.key = key;
+    positionCache.byId = computePositionsById(peerIds);
+  }
+  return peerIds.map(id => positionCache.byId.get(id));
+}
+
+function computePositionsById(peerIds) {
   const { xMin, xMax, yMin, yMax } = PEER_BOUNDS;
   const sorted = [...peerIds].sort();
   let positions = sorted.map(id => {
@@ -66,7 +82,9 @@ function calculatePeerPositions(peerIds) {
       yPct: Math.max(yMin, Math.min(yMax, p.yPct)),
     }));
   }
-  return peerIds.map(id => positions[sorted.indexOf(id)]);
+  const byId = new Map();
+  sorted.forEach((id, i) => byId.set(id, positions[i]));
+  return byId;
 }
 
 // --- icons ---
@@ -204,7 +222,7 @@ async function newRoom() {
 
 // --- templates ---
 function peerIconTemplate(peer, slot) {
-  const active = peer.isTalking || peer.isWhispering;
+  const active = isActive(peer);
   const cls = `peer-icon ${active ? 'talking' : ''} ${peer.isIdle ? 'idle' : ''}`;
   return html`
     <div class=${cls} data-peer-id=${peer.peerId}
@@ -331,6 +349,7 @@ function appTemplate() {
 
 // --- render scheduling: one path, rAF-coalesced ---
 let scheduled = false;
+let appliedTheme = null; // last roomCode pushed to CSS vars; reset on dark-mode change
 
 function scheduleRender() {
   if (scheduled || renderPaused) return;
@@ -339,8 +358,11 @@ function scheduleRender() {
 }
 
 function renderNow() {
-  const roomish = state.view === 'room' || state.view === 'knocking' || state.view === 'rejected';
-  if (roomish && state.roomCode) applyTheme(state.roomCode);
+  const roomish = ROOM_VIEWS.has(state.view);
+  if (roomish && state.roomCode && state.roomCode !== appliedTheme) {
+    applyTheme(state.roomCode);
+    appliedTheme = state.roomCode;
+  }
 
   render(appTemplate(), document.getElementById('app'));
 
@@ -380,6 +402,7 @@ window.addEventListener('online', () => { state.offline = false; });
 if (window.matchMedia) {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
     setDarkMode(e.matches);
+    appliedTheme = null; // dark mode flips fill/stroke — force theme re-apply
     scheduleRender();
   });
 }

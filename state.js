@@ -75,6 +75,9 @@ export function makePeer(peerId, username) {
   return { peerId, username: username || peerId, isTalking: false, isWhispering: false, isIdle: false };
 }
 
+// A peer renders/animates as a mouth when talking or whispering
+export const isActive = (peer) => peer.isTalking || peer.isWhispering;
+
 export function upsertPeer(peerId, username) {
   if (state.peers.some(p => p.peerId === peerId)) return;
   state.peers = [...state.peers, makePeer(peerId, username)];
