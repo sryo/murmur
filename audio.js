@@ -1,14 +1,24 @@
-// Audio: getUserMedia, PTT track toggle, analyser, silent track
+// Mic capture, PTT track toggle, analysers, silent track for whisper isolation
+
+const ANALYSER = { fftSize: 128, smoothingTimeConstant: 0.5 };
+const GUM_TIMEOUT_MS = 8000;
 
 let localStream = null;
 let audioCtx = null;
 let analyser = null;
 let silentTrack = null;
 let initPromise = null;
+const remoteAnalysers = new Map();
 
 export function initAudioContext() {
-  if (audioCtx) return;
-  audioCtx = new AudioContext();
+  if (!audioCtx) audioCtx = new AudioContext();
+}
+
+function makeAnalyser() {
+  const a = audioCtx.createAnalyser();
+  a.fftSize = ANALYSER.fftSize;
+  a.smoothingTimeConstant = ANALYSER.smoothingTimeConstant;
+  return a;
 }
 
 export function initAudio() {
@@ -18,53 +28,48 @@ export function initAudio() {
 }
 
 async function _initAudio() {
-  localStream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
+  const gum = navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   });
-  for (const track of localStream.getAudioTracks()) {
-    track.enabled = false;
-  }
-  audioCtx = new AudioContext();
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 128;
-  analyser.smoothingTimeConstant = 0.5;
-  const source = audioCtx.createMediaStreamSource(localStream);
-  source.connect(analyser);
+
+  // Only time-box when permission is already granted (device acquisition should be quick).
+  // When the browser is still prompting, let the user deliberate — don't force noMic on them.
+  let prompting = false;
+  try {
+    prompting = (await navigator.permissions.query({ name: 'microphone' })).state === 'prompt';
+  } catch {}
+
+  const stream = await (prompting
+    ? gum
+    : Promise.race([
+        gum,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('mic-timeout')), GUM_TIMEOUT_MS)),
+      ]));
+
+  localStream = stream;
+  for (const track of localStream.getAudioTracks()) track.enabled = false;
+
+  initAudioContext();
+  analyser = makeAnalyser();
+  audioCtx.createMediaStreamSource(localStream).connect(analyser);
 }
 
-export function getStream() {
-  return localStream;
-}
-
-export function getRealTrack() {
-  return localStream ? localStream.getAudioTracks()[0] : null;
-}
-
-export function getAnalyser() {
-  return analyser;
-}
-
-const remoteAnalysers = new Map();
+export const getStream = () => localStream;
+export const getRealTrack = () => (localStream ? localStream.getAudioTracks()[0] : null);
+export const getAnalyser = () => analyser;
 
 export function createRemoteAnalyser(peerId, stream) {
   removeRemoteAnalyser(peerId);
   if (!audioCtx) return null;
   const source = audioCtx.createMediaStreamSource(stream);
-  const an = audioCtx.createAnalyser();
-  an.fftSize = 128;
-  an.smoothingTimeConstant = 0.5;
+  const an = makeAnalyser();
   source.connect(an);
   remoteAnalysers.set(peerId, { source, analyser: an });
   return an;
 }
 
 export function getRemoteAnalyser(peerId) {
-  const entry = remoteAnalysers.get(peerId);
-  return entry ? entry.analyser : null;
+  return remoteAnalysers.get(peerId)?.analyser ?? null;
 }
 
 export function removeRemoteAnalyser(peerId) {
@@ -75,15 +80,15 @@ export function removeRemoteAnalyser(peerId) {
   }
 }
 
+// Silent track: a muted oscillator stream, swapped in to hide audio from non-whisper peers
 export function getSilentTrack() {
   if (silentTrack) return silentTrack;
   if (!audioCtx) return null;
   const oscillator = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
   gain.gain.value = 0;
-  oscillator.connect(gain);
   const dest = audioCtx.createMediaStreamDestination();
-  gain.connect(dest);
+  oscillator.connect(gain).connect(dest);
   oscillator.start();
   silentTrack = dest.stream.getAudioTracks()[0];
   return silentTrack;
@@ -91,9 +96,7 @@ export function getSilentTrack() {
 
 export function setTalking(talking) {
   if (!localStream) return;
-  for (const track of localStream.getAudioTracks()) {
-    track.enabled = talking;
-  }
+  for (const track of localStream.getAudioTracks()) track.enabled = talking;
 }
 
 export function destroyAudio() {

@@ -1,9 +1,8 @@
-// Entry: auto-create or auto-join, SW registration
-import { createRoom, joinRoom, leaveRoom } from './peer.js';
+// Entry: boot, SW registration, hash-based room routing
+import { createRoom, joinRoom, leaveRoom } from './net.js';
 import { initUI } from './ui.js';
 import state from './state.js';
 
-// Register service worker
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
@@ -13,25 +12,19 @@ function getRoomFromHash() {
   return match ? match[1].toUpperCase() : null;
 }
 
-function handleHashChange() {
+window.addEventListener('hashchange', () => {
   const newRoom = getRoomFromHash();
   if (newRoom && newRoom !== state.roomCode) {
     leaveRoom();
     joinRoom(newRoom);
   }
-}
+});
 
-// Boot
 async function boot() {
   await initUI();
-
   const room = getRoomFromHash();
-  if (room) {
-    joinRoom(room);
-  } else {
-    createRoom();
-  }
+  if (room) joinRoom(room);
+  else createRoom();
 }
 
-window.addEventListener('hashchange', handleHashChange);
 boot();

@@ -298,6 +298,15 @@ body {
   touch-action: none;
 }
 
+.name-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  text-align: center;
+  width: 7em;
+  padding: 0;
+}
+
 .peer-icon.no-mic {
   opacity: 0.35;
   pointer-events: none;
@@ -381,9 +390,6 @@ body {
   height: clamp(14px, 3.2vmin, 22px);
   stroke-width: 4;
   stroke-linecap: butt;
-}
-
-.btn-lock {
 }
 
 .btn-lock.active svg {
