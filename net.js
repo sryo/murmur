@@ -84,18 +84,19 @@ function setupRoom(code) {
 
   // Trystero 0.25: makeAction() -> { send, onMessage, onReceiveProgress }.
   // onMessage is an assignable handler property (like el.onclick), not a function to call.
+  // It fires as (payload, { peerId, metadata }) — the second arg is an object, not the id.
   function action(name, onMessage) {
     const a = room.makeAction(name);
     a.onMessage = onMessage;
     return a.send;
   }
 
-  send.talking = action('talking', (isTalking, peerId) => updatePeer(peerId, { isTalking }));
-  send.whisper = action('whisper', ({ isTalking }, peerId) => updatePeer(peerId, { isWhispering: isTalking }));
-  send.rename = action('rename', (username, peerId) => updatePeer(peerId, { username }));
-  send.idle = action('idle', (idle, peerId) => updatePeer(peerId, { isIdle: idle }));
+  send.talking = action('talking', (isTalking, { peerId }) => updatePeer(peerId, { isTalking }));
+  send.whisper = action('whisper', ({ isTalking }, { peerId }) => updatePeer(peerId, { isWhispering: isTalking }));
+  send.rename = action('rename', (username, { peerId }) => updatePeer(peerId, { username }));
+  send.idle = action('idle', (idle, { peerId }) => updatePeer(peerId, { isIdle: idle }));
 
-  send.username = action('username', (username, peerId) => {
+  send.username = action('username', (username, { peerId }) => {
     updatePeer(peerId, { username });
     if (state.pendingKnocks.some(k => k.peerId === peerId)) {
       state.pendingKnocks = state.pendingKnocks.map(k =>
@@ -106,7 +107,7 @@ function setupRoom(code) {
     }
   });
 
-  send.knock = action('knock', (msg, peerId) => {
+  send.knock = action('knock', (msg) => {
     if (msg.type === 'admitted') {
       admitSelf();
     } else if (msg.type === 'mode') {

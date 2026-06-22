@@ -216,7 +216,7 @@ async function newRoom() {
   await createRoom();
   requestAnimationFrame(() => {
     const el = document.querySelector('.room');
-    if (el) { el.classList.add('slide-in'); setTimeout(() => el.classList.remove('slide-in'), 400); }
+    if (el) { el.classList.remove('slide-out'); el.classList.add('slide-in'); setTimeout(() => el.classList.remove('slide-in'), 400); }
   });
 }
 
