@@ -9,6 +9,18 @@ import { joinRoom as trysteroJoin, selfId } from './vendor/trystero-nostr.js';
 const APP_ID = 'murmur-ptt';
 const AUTO_ADMIT_MS = 3000;
 
+// Signaling relays. Overrides the vendored bundle's stale defaults — the 5 it
+// picks for this appId are dead or now require auth. Update here if rooms stop
+// connecting again (test: wss handshake + REQ without AUTH demand).
+const RELAY_URLS = [
+  'wss://nos.lol',
+  'wss://relay.mostr.pub',
+  'wss://nostr.vulpem.com',
+  'wss://nostr-01.yakihonne.com',
+  'wss://purplerelay.com',
+  'wss://nostr.sathoarder.com',
+];
+
 let room = null;
 const send = {}; // talking, whisper, username, rename, idle, knock — filled in setupRoom
 
@@ -80,7 +92,7 @@ function admitPeer(peerId, username) {
 // --- room setup ---
 
 function setupRoom(code) {
-  room = trysteroJoin({ appId: APP_ID }, code);
+  room = trysteroJoin({ appId: APP_ID, relayConfig: { urls: RELAY_URLS } }, code);
 
   // Trystero 0.25: makeAction() -> { send, onMessage, onReceiveProgress }.
   // onMessage is an assignable handler property (like el.onclick), not a function to call.
