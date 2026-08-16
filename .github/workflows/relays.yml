@@ -1,0 +1,35 @@
+# Weekly relay health check: refreshes relays.json when entries rot.
+# Note: GitHub pauses cron workflows after ~60 days without repo activity
+# and emails to re-enable — one click resumes it.
+name: relays
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: node tools/check-relays.mjs
+      - run: |
+          if ! git diff --quiet relays.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add relays.json
+            git commit -m "Update relays"
+            git push
+          fi
+      - if: steps.check.outputs.low == '1'
+        run: |
+          echo "::error::Relay candidate pool health is low — add candidates to tools/check-relays.mjs"
+          exit 1

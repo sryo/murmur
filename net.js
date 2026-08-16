@@ -9,17 +9,42 @@ import { joinRoom as trysteroJoin, selfId } from './vendor/trystero-nostr.js';
 const APP_ID = 'murmur-ptt';
 const AUTO_ADMIT_MS = 3000;
 
-// Signaling relays. Overrides the vendored bundle's stale defaults — the 5 it
-// picks for this appId are dead or now require auth. Update here if rooms stop
-// connecting again (test: wss handshake + REQ without AUTH demand).
-const RELAY_URLS = [
+// Signaling relays override the vendored bundle's stale defaults — the 5 it
+// picks for this appId are dead or now require auth. The live list is
+// ./relays.json, refreshed weekly by tools/check-relays.mjs via CI; this
+// baked copy is the fallback when the fetch fails (offline, file://).
+const FALLBACK_RELAY_URLS = [
   'wss://nos.lol',
   'wss://relay.mostr.pub',
   'wss://nostr.vulpem.com',
   'wss://nostr-01.yakihonne.com',
   'wss://purplerelay.com',
   'wss://nostr.sathoarder.com',
+  'wss://relay.mostro.network',
+  'wss://nostr.mom',
+  'wss://nostr.oxtr.dev',
+  'wss://relay.primal.net',
 ];
+
+let relayUrlsPromise = null;
+
+function loadRelayUrls() {
+  relayUrlsPromise ??= (async () => {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 1500);
+      const res = await fetch('./relays.json', { cache: 'no-cache', signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw 0;
+      const urls = await res.json();
+      if (Array.isArray(urls) && urls.length && urls.every(u => typeof u === 'string' && u.startsWith('wss://'))) {
+        return urls;
+      }
+    } catch {}
+    return FALLBACK_RELAY_URLS;
+  })();
+  return relayUrlsPromise;
+}
 
 let room = null;
 const send = {}; // talking, whisper, username, rename, idle, knock — filled in setupRoom
@@ -91,8 +116,8 @@ function admitPeer(peerId, username) {
 
 // --- room setup ---
 
-function setupRoom(code) {
-  room = trysteroJoin({ appId: APP_ID, relayConfig: { urls: RELAY_URLS } }, code);
+function setupRoom(code, relayUrls) {
+  room = trysteroJoin({ appId: APP_ID, relayConfig: { urls: relayUrls } }, code);
 
   // Trystero 0.25: makeAction() -> { send, onMessage, onReceiveProgress }.
   // onMessage is an assignable handler property (like el.onclick), not a function to call.
@@ -323,8 +348,9 @@ export function resolveKnock(peerId, approved) {
 export async function createRoom() {
   state.admitted = true;
   state.creatorId = null;
+  const relayUrls = loadRelayUrls(); // fetch in parallel with mic prompt
   try { await initAudio(); } catch { initAudioContext(); state.noMic = true; }
-  setupRoom(genCode());
+  setupRoom(genCode(), await relayUrls);
   state.creatorId = selfId;
 }
 
@@ -332,8 +358,9 @@ export async function joinRoom(code) {
   code = code.toUpperCase().trim();
   if (!code) return;
   state.admitted = false;
+  const relayUrls = loadRelayUrls();
   try { await initAudio(); } catch { initAudioContext(); state.noMic = true; }
-  setupRoom(code);
+  setupRoom(code, await relayUrls);
   // Empty room: nobody answers within the window -> become the creator
   admitTimeout = setTimeout(() => {
     if (!state.admitted) { state.creatorId = selfId; admitSelf(); }
