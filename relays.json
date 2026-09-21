@@ -1,12 +1,12 @@
 [
   "wss://nos.lol",
-  "wss://relay.mostr.pub",
   "wss://nostr-01.yakihonne.com",
   "wss://purplerelay.com",
   "wss://nostr.sathoarder.com",
-  "wss://relay.mostro.network",
   "wss://nostr.mom",
   "wss://nostr.oxtr.dev",
   "wss://relay.primal.net",
-  "wss://offchain.pub"
+  "wss://offchain.pub",
+  "wss://relay.snort.social",
+  "wss://nostr.bitcoiner.social"
 ]
