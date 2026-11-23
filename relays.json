@@ -1,6 +1,5 @@
 [
   "wss://nos.lol",
-  "wss://nostr-01.yakihonne.com",
   "wss://purplerelay.com",
   "wss://nostr.sathoarder.com",
   "wss://nostr.mom",
@@ -8,5 +7,6 @@
   "wss://relay.primal.net",
   "wss://offchain.pub",
   "wss://relay.snort.social",
-  "wss://relay.mostro.network"
+  "wss://relay.mostro.network",
+  "wss://nostr.bitcoiner.social"
 ]
